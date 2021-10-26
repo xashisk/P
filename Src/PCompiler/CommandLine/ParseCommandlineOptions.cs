@@ -38,7 +38,7 @@ namespace Plang.Compiler
                 commandlineOutput.WriteInfo($"----------------------------------------");
                 commandlineOutput.WriteInfo($"==== Loading project file: {projectFile}");
 
-                var outputLanguage = CompilerOutput.CSharp;
+                var outputLanguage = CompilerOutput.Rust;
                 List<FileInfo> inputFiles = new List<FileInfo>();
                 bool generateSourceMaps = false;
                 List<string> projectDependencies = new List<string>();
@@ -93,7 +93,7 @@ namespace Plang.Compiler
         internal bool ParseCommandLineOptions(IEnumerable<string> args, out CompilationJob job)
         {
             string targetName = null;
-            CompilerOutput outputLanguage = CompilerOutput.CSharp;
+            CompilerOutput outputLanguage = CompilerOutput.Rust;
             DirectoryInfo outputDirectory = null;
             DirectoryInfo aspectjOutputDirectory = null;
             List<FileInfo> inputFiles = new List<FileInfo>();
@@ -137,7 +137,7 @@ namespace Plang.Compiler
                                 switch (colonArg?.ToLowerInvariant())
                                 {
                                     case null:
-                                        throw new CommandlineParsingError("Missing generation argument, expecting generate:[C,CSharp,RVM]");
+                                        throw new CommandlineParsingError("Missing generation argument, expecting generate:[C,CSharp,RVM,Rust]");
                                     case "c":
                                         outputLanguage = CompilerOutput.C;
                                         break;
@@ -150,8 +150,12 @@ namespace Plang.Compiler
                                         outputLanguage = CompilerOutput.Rvm;
                                         break;
 
+                                    case "rust":
+                                        outputLanguage = CompilerOutput.Rust;
+                                        break;
+
                                     default:
-                                        throw new CommandlineParsingError($"Unrecognized generate option '{colonArg}', expecting C or CSharp");
+                                        throw new CommandlineParsingError($"Unrecognized generate option '{colonArg}', expecting C or CSharp or RVM or Rust");
                                 }
                                 break;
 
@@ -344,8 +348,12 @@ namespace Plang.Compiler
                     outputLanguage = CompilerOutput.Rvm;
                     break;
 
+                case "rust":
+                    outputLanguage = CompilerOutput.Rust;
+                    break;
+
                 default:
-                    throw new CommandlineParsingError($"Expected C or CSharp as target, received {projectXml.Element("Target")?.Value}");
+                    throw new CommandlineParsingError($"Expected C or CSharp or Rust as target, received {projectXml.Element("Target")?.Value}");
             }
         }
 

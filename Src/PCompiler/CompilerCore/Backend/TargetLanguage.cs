@@ -1,6 +1,7 @@
 using Plang.Compiler.Backend.C;
 using Plang.Compiler.Backend.CSharp;
 using Plang.Compiler.Backend.Rvm;
+using Plang.Compiler.Backend.Rust;
 using System.Collections.Generic;
 
 namespace Plang.Compiler.Backend
@@ -15,6 +16,7 @@ namespace Plang.Compiler.Backend
             RegisterCodeGenerator(CompilerOutput.CSharp, new CSharpCodeGenerator());
             RegisterCodeGenerator(CompilerOutput.C, new CCodeGenerator());
             RegisterCodeGenerator(CompilerOutput.Rvm, new RvmCodeGenerator());
+            RegisterCodeGenerator(CompilerOutput.Rust, new RustCodeGenerator());
         }
 
         private static void RegisterCodeGenerator(CompilerOutput name, ICodeGenerator generator)

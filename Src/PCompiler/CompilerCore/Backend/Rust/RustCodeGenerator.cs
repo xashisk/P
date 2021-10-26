@@ -11,30 +11,32 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace Plang.Compiler.Backend.CSharp
+namespace Plang.Compiler.Backend.Rust
 {
-    public class CSharpCodeGenerator : ICodeGenerator
+    public class RustCodeGenerator : ICodeGenerator
     {
         public IEnumerable<CompiledFile> GenerateCode(ICompilationJob job, Scope globalScope)
         {
             CompilationContext context = new CompilationContext(job);
-            CompiledFile csharpSource = GenerateSource(context, globalScope);
-            return new List<CompiledFile> { csharpSource };
+            CompiledFile rustSource = GenerateSource(context, globalScope);
+            return new List<CompiledFile> { rustSource };
         }
 
-        private void WriteEventsRust(CompilationContext context, StringWriter output,
+        private void WriteEvents(CompilationContext context, StringWriter output,
             IEnumerable<PEvent> pEvents)
         {
-            context.WriteLine(output, "/*");
-            context.WriteLine(output, "enum Events");
+            context.WriteLine(output, "");
+            context.WriteLine(output, "enum EventName");
             context.WriteLine(output, "{");
             foreach (PEvent pEvent in pEvents)
             {
                 string declName = context.Names.GetNameForDecl(pEvent);
-                context.WriteLine(output, $"{declName}(PV::PValue),");
+                context.WriteLine(output, $"{declName},");
             }
             context.WriteLine(output, "}");
-            context.WriteLine(output, "*/");
+            context.WriteLine(output, "");
+
+            context.WriteLine(output, "pub type Events = (EventName, PV::PValue);");
         }
 
         private CompiledFile GenerateSource(CompilationContext context, Scope globalScope)
@@ -44,7 +46,7 @@ namespace Plang.Compiler.Backend.CSharp
             WriteSourcePrologue(context, source.Stream);
 
             // Rust Code Begins
-            WriteEventsRust(context, source.Stream, globalScope.Events);
+            WriteEvents(context, source.Stream, globalScope.Events);
             // Rust Code Ends
 
             // write the top level declarations
@@ -54,12 +56,12 @@ namespace Plang.Compiler.Backend.CSharp
             }
 
             // write the interface declarations
-            WriteInitializeInterfaces(context, source.Stream, globalScope.Interfaces);
+            //WriteInitializeInterfaces(context, source.Stream, globalScope.Interfaces);
 
             // write the enum declarations
-            WriteInitializeEnums(context, source.Stream, globalScope.Enums);
+            //WriteInitializeEnums(context, source.Stream, globalScope.Enums);
 
-            WriteSourceEpilogue(context, source.Stream);
+            //WriteSourceEpilogue(context, source.Stream);
 
             return source;
         }
@@ -105,6 +107,7 @@ namespace Plang.Compiler.Backend.CSharp
 
         private void WriteSourcePrologue(CompilationContext context, StringWriter output)
         {
+            context.WriteLine(output, "/*");
             context.WriteLine(output, "using Microsoft.Coyote;");
             context.WriteLine(output, "using Microsoft.Coyote.Actors;");
             context.WriteLine(output, "using Microsoft.Coyote.Runtime;");
@@ -124,20 +127,24 @@ namespace Plang.Compiler.Backend.CSharp
             context.WriteLine(output, $"namespace PImplementation");
             context.WriteLine(output, "{");
             context.WriteLine(output, "}");
-            // Rust Code Begins
-            context.WriteLine(output, "/*");
-            context.WriteLine(output, "use crate::p_event as EV;");
-            context.WriteLine(output, "use crate::p_value as PV;");
-            context.WriteLine(output, "use crate::global_configuration as GC;");
-            context.WriteLine(output, "use crate::p_state_machine as PSM;");
-            context.WriteLine(output, "use crate::machine_index as M;");
             context.WriteLine(output, "*/");
+            // Rust Code Begins
+            context.WriteLine(output, "use crate::common_machine_data as MD;");
+            context.WriteLine(output, "use crate::machine_index as M;");
+            context.WriteLine(output, "use crate::message_passing as MP;");
+            context.WriteLine(output, "use crate::p_state_machine::PStateMachine;");
+            context.WriteLine(output, "use crate::p_value as PV;");
+            context.WriteLine(output, "use crate::p_state_machine as PSM;");
+            context.WriteLine(output, "use std::sync::mpsc;");
+            context.WriteLine(output, "use std::thread;");
             // Rust Code Ends
         }
 
         private void WriteSourceEpilogue(CompilationContext context, StringWriter output)
         {
+            context.WriteLine(output, "/*");
             context.WriteLine(output, "#pragma warning restore 162, 219, 414");
+            context.WriteLine(output, "*/");
         }
 
         private void WriteNameSpacePrologue(CompilationContext context, StringWriter output)
@@ -173,7 +180,9 @@ namespace Plang.Compiler.Backend.CSharp
                 case PEvent pEvent:
                     if (!pEvent.IsBuiltIn)
                     {
+                        context.WriteLine(output, "/*");
                         WriteEvent(context, output, pEvent);
+                        context.WriteLine(output, "*/");
                     }
 
                     break;
@@ -194,20 +203,26 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case TypeDef typeDef:
+                    context.WriteLine(output, "/*");
                     ForeignType foreignType = typeDef.Type as ForeignType;
                     if (foreignType != null)
                     {
                         WriteForeignType(context, output, foreignType);
                     }
+                    context.WriteLine(output, "*/");
 
                     break;
 
                 case Implementation impl:
+                    context.WriteLine(output, "/*");
                     WriteImplementationDecl(context, output, impl);
+                    context.WriteLine(output, "*/");
                     break;
 
                 case SafetyTest safety:
+                    context.WriteLine(output, "/*");
                     WriteSafetyTestDecl(context, output, safety);
+                    context.WriteLine(output, "*/");
                     break;
 
                 case Interface _:
@@ -234,7 +249,7 @@ namespace Plang.Compiler.Backend.CSharp
             foreach (Variable field in machine.Fields)
             {
                 context.WriteLine(output,
-                    $"private {GetCSharpType(field.Type)} {context.Names.GetNameForDecl(field)} = {GetDefaultValue(field.Type)};");
+                    $"private {GetCSharpType(field.Type)} {context.Names.GetNameForDecl(field)} = {DefaultValueForType(field.Type)};");
             }
 
             WriteMonitorConstructor(context, output, machine);
@@ -460,6 +475,7 @@ namespace Plang.Compiler.Backend.CSharp
 
         private void WriteMachine(CompilationContext context, StringWriter output, Machine machine)
         {
+            context.WriteLine(output, "/*");
             WriteNameSpacePrologue(context, output);
 
             string declName = context.Names.GetNameForDecl(machine);
@@ -484,7 +500,7 @@ namespace Plang.Compiler.Backend.CSharp
                 $"protected override Event GetConstructorEvent(IPrtValue value) {{ return new ConstructorEvent(({cTorType})value); }}");
 
             // create the constructor to initialize the sends, creates and receives list
-            WriteMachineConstructor(context, output, machine);
+            WriteCSharpMachineConstructor(context, output, machine);
 
             foreach (Function method in machine.Methods)
             {
@@ -500,16 +516,16 @@ namespace Plang.Compiler.Backend.CSharp
 
             WriteNameSpaceEpilogue(context, output);
 
-            // Rust Code Begins
-            context.WriteLine(output, "/*");
+            context.WriteLine(output, "*/");
 
-            WriteRustStates(context, output, machine.States, declName);
+            // Rust Code Begins
+            // enum for all states of machine
+            WriteStates(context, output, machine.States, declName);
+
+            // machine declaration
             context.WriteLine(output, $"pub struct {declName}");
             context.WriteLine(output, "{");
-            context.WriteLine(output, "name: &'static str,");
-            context.WriteLine(output, "self_id: M::Index,");
-            context.WriteLine(output, $"current_state: {declName}State,");
-            context.WriteLine(output, "local_buffer: VecDeque<Events>,");
+            context.WriteLine(output, $"common_data: MD::CommonMachineData<Events, {declName}State>,");
             foreach (Variable field in machine.Fields)
             {
                 context.WriteLine(output, $"{context.Names.GetNameForDecl(field)}: {GetRustType(field.Type)},");
@@ -521,65 +537,20 @@ namespace Plang.Compiler.Backend.CSharp
             context.WriteLine(output, "{");
 
             // constructor
-            context.WriteLine(output, "pub fn new() -> Self");
-            context.WriteLine(output, "{");
-            context.WriteLine(output, $"let name = \"{declName}\";");
-            context.WriteLine(output, $"let self_id = M::Index::create_index({declName}, 0);");
-            context.WriteLine(output, $"let current_state = {declName}State::{context.Names.GetNameForDecl(machine.StartState)};");
-            context.WriteLine(output, $"let local_buffer = VecDeque::new();");
-            foreach (Variable field in machine.Fields)
-            {
-                context.WriteLine(output, $"let {context.Names.GetNameForDecl(field)} = {defaultValueForType(field.Type)};");
-            }
-
-            context.WriteLine(output, $"{declName}");
-            context.WriteLine(output, "{");
-            context.WriteLine(output, "name,");
-            context.WriteLine(output, "self_id,");
-            context.WriteLine(output, "current_state,");
-            context.WriteLine(output, "local_buffer,");
-            foreach (Variable field in machine.Fields)
-            {
-                context.WriteLine(output, $"{context.Names.GetNameForDecl(field)},");
-            }
-            context.WriteLine(output, "}");
-            context.WriteLine(output, "}");
-
-            // enqueuing event
-            context.WriteLine(output, "");
-            context.WriteLine(output, "fn enqueue_event(&mut self, e: Events)");
-            context.WriteLine(output, "{");
-            context.WriteLine(output, "self.local_buffer.push_back(e);");
-            context.WriteLine(output, "}");
-
-            // sending event to other machines (or itself)
-            context.WriteLine(output, "");
-            context.WriteLine(output, "fn send_event(&mut self, receiver: M::Index, event: Events, config: &mut GC::GlobalConfig<ClientServerEvent>)");
-            context.WriteLine(output, "{");
-            context.WriteLine(output, "if receiver == self.self_id");
-            context.WriteLine(output, "{");
-            context.WriteLine(output, "self.enqueue_event(event);");
-            context.WriteLine(output, "}");
-            context.WriteLine(output, "else");
-            context.WriteLine(output, "{");
-            context.WriteLine(output, "config.send_event(&receiver, event);");
-            context.WriteLine(output, "}");
-            context.WriteLine(output, "}");
+            WriteMachineConstructor(context, output, machine);
 
             // transition functions
             foreach (Function method in machine.Methods)
             {
-                WriteRustFunction(context, output, method, declName);
+                WriteRustFunction(context, output, method, declName, machine.Fields);
             }
 
             // ending the impl for state machine
             context.WriteLine(output, "}");
-
-            context.WriteLine(output, "*/");
             // Rust Code Ends
         }
 
-        private void WriteRustStates(CompilationContext context, StringWriter output,
+        private void WriteStates(CompilationContext context, StringWriter output,
             IEnumerable<State> states, string machine_name)
         {
             context.WriteLine(output, "#[derive(Debug)]");
@@ -592,7 +563,7 @@ namespace Plang.Compiler.Backend.CSharp
             context.WriteLine(output, "}");
         }
 
-        private static void WriteMachineConstructor(CompilationContext context, StringWriter output, Machine machine)
+        private static void WriteCSharpMachineConstructor(CompilationContext context, StringWriter output, Machine machine)
         {
             string declName = context.Names.GetNameForDecl(machine);
             context.WriteLine(output, $"public {declName}() {{");
@@ -613,6 +584,41 @@ namespace Plang.Compiler.Backend.CSharp
 
             context.WriteLine(output, "}");
             context.WriteLine(output);
+        }
+
+        private void WriteMachineConstructor(CompilationContext context, StringWriter output, Machine machine)
+        {
+            string declName = context.Names.GetNameForDecl(machine);
+            context.WriteLine(output, "pub fn new(");
+            context.WriteLine(output, "tx_machine_to_config: mpsc::Sender<MP::MachineToConfigMsg<Events>>,");
+            context.WriteLine(output, "rx_config_to_machine: mpsc::Receiver<MP::ConfigToMachineMsg<Events>>,");
+            context.WriteLine(output, "args: PV::PValue) -> Box<Self>");
+            context.WriteLine(output, "{");
+            context.WriteLine(output, $"let name = \"{declName}\";");
+            context.WriteLine(output, $"let self_id = M::Index::create_index(name, 0);");
+            context.WriteLine(output, $"let current_state = {declName}State::{context.Names.GetNameForDecl(machine.StartState)};");
+            foreach (Variable field in machine.Fields)
+            {
+                context.WriteLine(output, $"let {context.Names.GetNameForDecl(field)} = {DefaultValueForType(field.Type)};");
+            }
+
+            context.WriteLine(output, $"Box::new({declName}");
+            context.WriteLine(output, "{");
+            context.WriteLine(output, "common_data: MD::CommonMachineData::create(");
+            context.WriteLine(output, "name,");
+            context.WriteLine(output, "self_id,");
+            context.WriteLine(output, "current_state,");
+            context.WriteLine(output, "tx_machine_to_config,");
+            context.WriteLine(output, "rx_config_to_machine,");
+            context.WriteLine(output, "args,");
+            context.WriteLine(output, "),");
+            foreach (Variable field in machine.Fields)
+            {
+                context.WriteLine(output, $"{context.Names.GetNameForDecl(field)},");
+            }
+            context.WriteLine(output, "})");
+            context.WriteLine(output, "}");
+
         }
 
         private void WriteState(CompilationContext context, StringWriter output, State state)
@@ -1075,7 +1081,7 @@ namespace Plang.Compiler.Backend.CSharp
                         {
                             PLanguageType type = local.Type;
                             context.WriteLine(output,
-                                $"{GetCSharpType(type, true)} {context.Names.GetNameForDecl(local)} = {GetDefaultValue(type)};");
+                                $"{GetCSharpType(type, true)} {context.Names.GetNameForDecl(local)} = {DefaultValueForType(type)};");
                         }
 
                         foreach (IPStmt caseStmt in recvCase.Value.Body.Statements)
@@ -1412,7 +1418,7 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case DefaultExpr defaultExpr:
-                    context.Write(output, GetDefaultValue(defaultExpr.Type));
+                    context.Write(output, DefaultValueForType(defaultExpr.Type));
                     break;
 
                 case EnumElemRefExpr enumElemRefExpr:
@@ -1573,7 +1579,7 @@ namespace Plang.Compiler.Backend.CSharp
 #pragma warning restore CCN0002 // Non exhaustive patterns in switch block
         }
 
-        private void WriteRustFunction(CompilationContext context, StringWriter output, Function function, string machine_name)
+        private void WriteRustFunction(CompilationContext context, StringWriter output, Function function, string machine_name, IEnumerable<Variable> machine_fields)
         {
             bool isStatic = function.Owner == null;
 
@@ -1594,7 +1600,7 @@ namespace Plang.Compiler.Backend.CSharp
             string functionParameters = "";
             if (function.IsAnon)
             {
-                functionParameters = "&mut self, config: &mut GC::GlobalConfig<Events>";
+                functionParameters = "&mut self, e: Option<Events>";
             }
             else
             {
@@ -1612,47 +1618,31 @@ namespace Plang.Compiler.Backend.CSharp
 
             context.WriteLine(output,
                 $"fn {staticKeyword}{asyncKeyword}{functionName}({functionParameters})");
-            WriteRustFunctionBody(context, output, function, machine_name);
+            WriteRustFunctionBody(context, output, function, machine_name, machine_fields);
         }
 
-        private void WriteRustFunctionBody(CompilationContext context, StringWriter output, Function function, string machine_name)
+        private void WriteRustFunctionBody(CompilationContext context, StringWriter output, Function function, string machine_name, IEnumerable<Variable> machine_fields)
         {
             context.WriteLine(output, "{");
-
-            //add the declaration of currentMachine
-            if (function.Owner != null)
-            {
-                context.WriteLine(output, $"{context.Names.GetNameForDecl(function.Owner)} currentMachine = this;");
-            }
-
-            if (function.IsAnon)
-            {
-                if (function.Signature.Parameters.Any())
-                {
-                    Variable param = function.Signature.Parameters.First();
-                    context.WriteLine(output,
-                        $"{GetCSharpType(param.Type)} {context.Names.GetNameForDecl(param)} = ({GetCSharpType(param.Type)})(gotoPayload ?? ((PEvent)currentMachine_dequeuedEvent).Payload);");
-                    context.WriteLine(output, "this.gotoPayload = null;");
-                }
-            }
-
+            context.WriteLine(output, "self.common_data.execution_status = MP::default_status();");
+            
             foreach (Variable local in function.LocalVariables)
             {
                 PLanguageType type = local.Type;
                 context.WriteLine(output,
-                    $"{GetRustType(type, true)} {context.Names.GetNameForDecl(local)} = {defaultValueForType(type)};");
+                    $"let mut {context.Names.GetNameForDecl(local)} = {DefaultValueForType(type)};");
             }
 
             foreach (IPStmt bodyStatement in function.Body.Statements)
             {
-                WriteRustStmt(context, output, function, bodyStatement, machine_name);
+                WriteRustStmt(context, output, function, bodyStatement, machine_name, machine_fields);
             }
 
             context.WriteLine(output, "}");
         }
 
         private void WriteRustStmt(CompilationContext context, StringWriter output, Function function,
-            IPStmt stmt, string machine_name)
+            IPStmt stmt, string machine_name, IEnumerable<Variable> machine_fields)
         {
             switch (stmt)
             {
@@ -1684,9 +1674,9 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case AssignStmt assignStmt:
-                    WriteRustLValue(context, output, assignStmt.Location);
+                    WriteRustLValue(context, output, assignStmt.Location, machine_fields);
                     context.Write(output, $" = ");
-                    WriteExpr(context, output, assignStmt.Value);
+                    WriteRustExpr(context, output, assignStmt.Value, machine_fields);
                     context.WriteLine(output, ";");
                     break;
 
@@ -1694,7 +1684,7 @@ namespace Plang.Compiler.Backend.CSharp
                     context.WriteLine(output, "{");
                     foreach (IPStmt subStmt in compoundStmt.Statements)
                     {
-                        WriteStmt(context, output, function, subStmt);
+                        WriteRustStmt(context, output, function, subStmt, machine_name, machine_fields);
                     }
 
                     context.WriteLine(output, "}");
@@ -1754,20 +1744,23 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case GotoStmt gotoStmt:
-                    //last statement
-                    context.Write(output, $"self.current_state = {machine_name}::{context.Names.GetNameForDecl(gotoStmt.State)}");
-                    context.WriteLine(output, "return;");
+                    // last statement
+                    // set the execution status to CanExecuteFurther
+                    // otherwise defaults to WaitingForEvent
+                    context.WriteLine(output, $"self.current_state = {machine_name}State::{context.Names.GetNameForDecl(gotoStmt.State)};");
+                    context.WriteLine(output, "self.common_data.execution_status = MP::ExecutionStatus::CanExecuteFurther;");
+                    context.WriteLine(output, "return");
                     break;
 
                 case IfStmt ifStmt:
-                    context.Write(output, "if (");
-                    WriteExpr(context, output, ifStmt.Condition);
-                    context.WriteLine(output, ")");
-                    WriteStmt(context, output, function, ifStmt.ThenBranch);
+                    context.Write(output, "if ");
+                    WriteRustExpr(context, output, ifStmt.Condition, machine_fields);
+                    context.WriteLine(output, "");
+                    WriteRustStmt(context, output, function, ifStmt.ThenBranch, machine_name, machine_fields);
                     if (ifStmt.ElseBranch != null && ifStmt.ElseBranch.Statements.Any())
                     {
                         context.WriteLine(output, "else");
-                        WriteStmt(context, output, function, ifStmt.ElseBranch);
+                        WriteRustStmt(context, output, function, ifStmt.ElseBranch, machine_name, machine_fields);
                     }
 
                     break;
@@ -1811,7 +1804,7 @@ namespace Plang.Compiler.Backend.CSharp
                         }
                     }
 
-                    WriteLValue(context, output, moveAssignStmt.ToLocation);
+                    WriteRustLValue(context, output, moveAssignStmt.ToLocation, machine_fields);
                     context.WriteLine(output,
                         $" = {upCast}{context.Names.GetNameForDecl(moveAssignStmt.FromVariable)};");
                     break;
@@ -1833,16 +1826,8 @@ namespace Plang.Compiler.Backend.CSharp
 
                 case RaiseStmt raiseStmt:
                     //last statement
-                    context.Write(output, "currentMachine.TryRaiseEvent((Event)");
-                    WriteExpr(context, output, raiseStmt.PEvent);
-                    if (raiseStmt.Payload.Any())
-                    {
-                        context.Write(output, ", ");
-                        WriteExpr(context, output, raiseStmt.Payload.First());
-                    }
-
-                    context.WriteLine(output, ");");
-                    context.WriteLine(output, "return;");
+                    context.WriteLine(output, "self.common_data.execution_status = MP::ExecutionStatus::Terminated;");
+                    context.WriteLine(output, "return");
                     break;
 
                 case ReceiveStmt receiveStmt:
@@ -1866,7 +1851,7 @@ namespace Plang.Compiler.Backend.CSharp
                         {
                             PLanguageType type = local.Type;
                             context.WriteLine(output,
-                                $"{GetCSharpType(type, true)} {context.Names.GetNameForDecl(local)} = {GetDefaultValue(type)};");
+                                $"{GetCSharpType(type, true)} {context.Names.GetNameForDecl(local)} = {DefaultValueForType(type)};");
                         }
 
                         foreach (IPStmt caseStmt in recvCase.Value.Body.Statements)
@@ -1936,9 +1921,9 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case SendStmt sendStmt:
-                    context.Write(output, "currentMachine.TrySendEvent(");
+                    context.Write(output, "self.send_event(");
                     WriteExpr(context, output, sendStmt.MachineExpr);
-                    context.Write(output, ", (Event)");
+                    context.Write(output, ", (");
                     WriteExpr(context, output, sendStmt.Evt);
 
                     if (sendStmt.Arguments.Any())
@@ -1967,7 +1952,7 @@ namespace Plang.Compiler.Backend.CSharp
                         }
                     }
 
-                    context.WriteLine(output, ");");
+                    context.WriteLine(output, "));");
                     break;
 
                 case SwapAssignStmt swapStmt:
@@ -1985,7 +1970,7 @@ namespace Plang.Compiler.Backend.CSharp
             }
         }
 
-        private void WriteRustLValue(CompilationContext context, StringWriter output, IPExpr lvalue)
+        private void WriteRustLValue(CompilationContext context, StringWriter output, IPExpr lvalue, IEnumerable<Variable> machine_fields)
         {
 #pragma warning disable CCN0002 // Non exhaustive patterns in switch block
             switch (lvalue)
@@ -2027,7 +2012,12 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case VariableAccessExpr variableAccessExpr:
-                    context.Write(output, context.Names.GetNameForDecl(variableAccessExpr.Variable));
+                    Variable var = variableAccessExpr.Variable;
+                    if (machine_fields.Contains(var)) context.Write(output, "self.");
+                    string varname = context.Names.GetNameForDecl(variableAccessExpr.Variable);
+                    string payload = "payload";
+                    if (varname.Equals(payload)) context.Write(output, "self.common_data.");
+                    context.Write(output, varname);
                     break;
 
                 default:
@@ -2036,13 +2026,13 @@ namespace Plang.Compiler.Backend.CSharp
 #pragma warning restore CCN0002 // Non exhaustive patterns in switch block
         }
 
-        private void WriteRustExpr(CompilationContext context, StringWriter output, IPExpr pExpr)
+        private void WriteRustExpr(CompilationContext context, StringWriter output, IPExpr pExpr, IEnumerable<Variable> machine_fields)
         {
 #pragma warning disable CCN0002 // Non exhaustive patterns in switch block
             switch (pExpr)
             {
                 case CloneExpr cloneExpr:
-                    WriteClone(context, output, cloneExpr.Term);
+                    WriteRustClone(context, output, cloneExpr.Term, machine_fields);
                     break;
 
                 case BinOpExpr binOpExpr:
@@ -2054,56 +2044,56 @@ namespace Plang.Compiler.Backend.CSharp
                         if (PLanguageType.TypeIsOfKind(binOpExpr.Lhs.Type, TypeKind.Enum))
                         {
                             context.Write(output, "PrtValues.Box((long) ");
-                            WriteExpr(context, output, binOpExpr.Lhs);
+                            WriteRustExpr(context, output, binOpExpr.Lhs, machine_fields);
                             context.Write(output, "),");
                         }
                         else
                         {
-                            WriteExpr(context, output, binOpExpr.Lhs);
+                            WriteRustExpr(context, output, binOpExpr.Lhs, machine_fields);
                             context.Write(output, ",");
                         }
 
                         if (PLanguageType.TypeIsOfKind(binOpExpr.Rhs.Type, TypeKind.Enum))
                         {
                             context.Write(output, "PrtValues.Box((long) ");
-                            WriteExpr(context, output, binOpExpr.Rhs);
+                            WriteRustExpr(context, output, binOpExpr.Rhs, machine_fields);
                             context.Write(output, ")");
                         }
                         else
                         {
-                            WriteExpr(context, output, binOpExpr.Rhs);
+                            WriteRustExpr(context, output, binOpExpr.Rhs, machine_fields);
                         }
 
                         context.Write(output, "))");
                     }
                     else
                     {
-                        context.Write(output, "(");
                         if (PLanguageType.TypeIsOfKind(binOpExpr.Lhs.Type, TypeKind.Enum))
                         {
                             context.Write(output, "(long)");
                         }
 
-                        WriteExpr(context, output, binOpExpr.Lhs);
-                        context.Write(output, $") {BinOpToStr(binOpExpr.Operation)} (");
+                        WriteRustExpr(context, output, binOpExpr.Lhs, machine_fields);
+                        context.Write(output, $" {BinOpToStr(binOpExpr.Operation)} ");
                         if (PLanguageType.TypeIsOfKind(binOpExpr.Rhs.Type, TypeKind.Enum))
                         {
                             context.Write(output, "(long)");
                         }
 
-                        WriteExpr(context, output, binOpExpr.Rhs);
-                        context.Write(output, ")");
+                        WriteRustExpr(context, output, binOpExpr.Rhs, machine_fields);
                     }
 
                     break;
 
                 case BoolLiteralExpr boolLiteralExpr:
-                    context.Write(output, $"((PrtBool){(boolLiteralExpr.Value ? "true" : "false")})");
+                    context.Write(output, $"{(boolLiteralExpr.Value ? "true" : "false")}");
                     break;
 
                 case CastExpr castExpr:
-                    context.Write(output, $"(({GetCSharpType(castExpr.Type)})");
-                    WriteExpr(context, output, castExpr.SubExpr);
+                    string tp = GetRustType(castExpr.Type);
+                    context.Write(output, $"(");
+                    WriteRustExpr(context, output, castExpr.SubExpr, machine_fields);
+                    context.Write(output, $" as {tp}");
                     context.Write(output, ")");
                     break;
 
@@ -2203,7 +2193,7 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case DefaultExpr defaultExpr:
-                    context.Write(output, GetDefaultValue(defaultExpr.Type));
+                    context.Write(output, DefaultValueForType(defaultExpr.Type));
                     break;
 
                 case EnumElemRefExpr enumElemRefExpr:
@@ -2216,16 +2206,16 @@ namespace Plang.Compiler.Backend.CSharp
                     switch (eventName)
                     {
                         case "Halt":
-                            context.Write(output, "new PHalt()");
+                            context.Write(output, "EventName::PHalt");
                             break;
 
                         case "DefaultEvent":
-                            context.Write(output, "DefaultEvent.Instance");
+                            context.Write(output, "EventName::DefaultEvent");
                             break;
 
                         default:
-                            string payloadExpr = GetDefaultValue(eventRefExpr.Value.PayloadType);
-                            context.Write(output, $"new {eventName}({payloadExpr})");
+                            // QUES: Why are we taking the default value for type? What about the argument itself
+                            context.Write(output, $"EventName::{eventName}");
                             break;
                     }
 
@@ -2263,7 +2253,7 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case IntLiteralExpr intLiteralExpr:
-                    context.Write(output, $"((PrtInt){intLiteralExpr.Value})");
+                    context.Write(output, $"{intLiteralExpr.Value}");
                     break;
 
                 case KeysExpr keysExpr:
@@ -2321,7 +2311,7 @@ namespace Plang.Compiler.Backend.CSharp
                     break;
 
                 case ThisRefExpr _:
-                    context.Write(output, "currentMachine.self");
+                    context.Write(output, "self.self_id");
                     break;
 
                 case UnaryOpExpr unaryOpExpr:
@@ -2355,7 +2345,7 @@ namespace Plang.Compiler.Backend.CSharp
                 case SeqAccessExpr _:
                 case TupleAccessExpr _:
                 case VariableAccessExpr _:
-                    WriteLValue(context, output, pExpr);
+                    WriteRustLValue(context, output, pExpr, machine_fields);
                     break;
 
                 default:
@@ -2374,6 +2364,22 @@ namespace Plang.Compiler.Backend.CSharp
 
             string varName = context.Names.GetNameForDecl(variableRef.Variable);
             context.Write(output, $"(({GetCSharpType(variableRef.Type)})((IPrtValue){varName})?.Clone())");
+        }
+
+        private void WriteRustClone(CompilationContext context, StringWriter output, IExprTerm cloneExprTerm, IEnumerable<Variable> machine_fields)
+        {
+            WriteRustExpr(context, output, cloneExprTerm, machine_fields);
+            return;
+            /*
+            if (!(cloneExprTerm is IVariableRef variableRef))
+            {
+                WriteRustExpr(context, output, cloneExprTerm, machine_fields);
+                return;
+            }
+
+            string varName = context.Names.GetNameForDecl(variableRef.Variable);
+            context.Write(output, $"{varName}");
+            */
         }
 
         private string GetCSharpType(PLanguageType type, bool isVar = false)
@@ -2456,7 +2462,7 @@ namespace Plang.Compiler.Backend.CSharp
                     throw new NotImplementedException();
 
                 case PermissionType _:
-                    throw new NotImplementedException();
+                    return "M::Index";
 
                 case PrimitiveType primitiveType when primitiveType.IsSameTypeAs(PrimitiveType.Any):
                     throw new NotImplementedException();
@@ -2495,8 +2501,6 @@ namespace Plang.Compiler.Backend.CSharp
                     throw new ArgumentOutOfRangeException(nameof(type));
             }
         }
-
-
 
         private string GetDefaultValue(PLanguageType returnType)
         {
@@ -2555,7 +2559,7 @@ namespace Plang.Compiler.Backend.CSharp
             }
         }
 
-        private string defaultValueForType(PLanguageType returnType)
+        private string DefaultValueForType(PLanguageType returnType)
         {
             switch (returnType.Canonicalize())
             {
@@ -2589,17 +2593,25 @@ namespace Plang.Compiler.Backend.CSharp
                 case PrimitiveType primitiveType when primitiveType.IsSameTypeAs(PrimitiveType.String):
                     return "\"\"";
 
-                case PrimitiveType eventType when eventType.IsSameTypeAs(PrimitiveType.Event):
-                case PermissionType _:
-                case PrimitiveType anyType when anyType.IsSameTypeAs(PrimitiveType.Any):
                 case PrimitiveType machineType when machineType.IsSameTypeAs(PrimitiveType.Machine):
-                case ForeignType _:
+                    return "M::dummy_index()";
+
+                case PermissionType _:
+                    return "M::dummy_index()";
+
+                case PrimitiveType eventType when eventType.IsSameTypeAs(PrimitiveType.Event):
+                    return "(EventName::DefaultEvent, PV::PValue::DefaultVal)";
+
                 case PrimitiveType nullType when nullType.IsSameTypeAs(PrimitiveType.Null):
+                    return "null";
+
+                case PrimitiveType anyType when anyType.IsSameTypeAs(PrimitiveType.Any):
+                case ForeignType _:
                 case DataType _:
                     throw new NotImplementedException();
 
                 case null:
-                    throw new NotImplementedException();
+                    return "null";
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(returnType));

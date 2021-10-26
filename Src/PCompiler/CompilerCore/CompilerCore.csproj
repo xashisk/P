@@ -25,4 +25,10 @@
       <CustomToolNamespace>Plang.Compiler</CustomToolNamespace>
     </Antlr4>
   </ItemGroup>
+  <ItemGroup>
+    <None Remove="Backend\CSharp %28copy%29\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Backend\Rust\" />
+  </ItemGroup>
 </Project>
