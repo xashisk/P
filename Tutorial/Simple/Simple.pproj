@@ -1,0 +1,8 @@
+<!-- P Project file for the Simple example -->
+<Project>
+<ProjectName>Simple</ProjectName>
+<InputFiles>
+	<PFile>./</PFile>
+</InputFiles>
+<OutputDir>./PGenerated/</OutputDir>
+</Project>
