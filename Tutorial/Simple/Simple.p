@@ -1,9 +1,5 @@
-// WaitingForEvent is the default value for execution status
-// ExecutionStatus is put inside common_data; updated when
-// GotoStmt is encountered
-
-event e_req : Client;
-event e_resp;
+event Ereq : Client;
+event Eresp;
 
 machine Client
 {
@@ -13,11 +9,11 @@ machine Client
 
   start state Init
   {
-    entry (payload : Server)
+    entry (srvr : Server)
     {
       i = 0;
       num_pings = 20;
-      server = payload;
+      server = srvr;
       goto SendReq;
     }
   }
@@ -29,7 +25,7 @@ machine Client
       if (i < num_pings)
       {
         i = i+1;
-        send server, e_req, this;
+        send server, Ereq, this;
         goto WaitforResp;
       }
       else
@@ -41,7 +37,7 @@ machine Client
 
   state WaitforResp
   {
-    on e_resp do
+    on Eresp do
     {
       goto SendReq;
     }
@@ -66,16 +62,47 @@ machine Server
     entry
     {
       i = 0;
-      num_pings = 20;
+      num_pings = 40;
       goto WaitForReq;
     }
   }
 
   state WaitForReq
   {
-    on e_req do (client: Client)
+    on Ereq do (client: Client)
     {
-      send client, e_resp;
+      i = i+1;
+      send client, Eresp;
+      if (i >= num_pings)
+      {
+        raise halt;
+      }
+    }
+  }
+}
+
+machine Main
+{
+  var server: Server;
+  var client1: Client;
+  var client2: Client;
+
+  start state Init
+  {
+    entry
+    {
+      server = new Server();
+      client1 = new Client(server);
+      client2 = new Client(server);
+      goto Exit;
+    }
+  }
+
+  state Exit
+  {
+    entry
+    {
+      raise halt;
     }
   }
 }

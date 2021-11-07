@@ -22,11 +22,30 @@ namespace Plang.Compiler.Backend.Rust
             return new List<CompiledFile> { rustSource };
         }
 
+        private static string EventTypeName = "ProtocolEvent";
+        private static string EventNameTypeName = "ProtocolEventName";
+
+        private static string EventTypeDecl = $@"#[derive(Debug)]
+pub struct {EventTypeName} {{
+    pub name: {EventNameTypeName},
+    pub payload: PV::PValue,
+}}";
+
+        private static string EventTraitDecl = @$"impl EV::PEvent for {EventTypeName} {{
+    fn default() -> Self {{
+        {EventTypeName} {{
+            name: {EventNameTypeName}::DefaultEvent,
+            payload: PV::PValue::DefaultVal
+        }}
+    }}
+}}";
+
         private void WriteEvents(CompilationContext context, StringWriter output,
             IEnumerable<PEvent> pEvents)
         {
             context.WriteLine(output, "");
-            context.WriteLine(output, "enum EventName");
+            context.WriteLine(output, "#[derive(Debug)]");
+            context.WriteLine(output, $"pub enum {EventNameTypeName}");
             context.WriteLine(output, "{");
             foreach (PEvent pEvent in pEvents)
             {
@@ -36,7 +55,9 @@ namespace Plang.Compiler.Backend.Rust
             context.WriteLine(output, "}");
             context.WriteLine(output, "");
 
-            context.WriteLine(output, "pub type Events = (EventName, PV::PValue);");
+            context.WriteLine(output, EventTypeDecl);
+            context.WriteLine(output, "");
+            context.WriteLine(output, EventTraitDecl);
         }
 
         private CompiledFile GenerateSource(CompilationContext context, Scope globalScope)
@@ -55,6 +76,9 @@ namespace Plang.Compiler.Backend.Rust
                 WriteDecl(context, source.Stream, decl);
             }
 
+            // write the machine creation function
+            WriteMachineCreationFunction(context, source.Stream, globalScope);
+
             // write the interface declarations
             //WriteInitializeInterfaces(context, source.Stream, globalScope.Interfaces);
 
@@ -64,6 +88,60 @@ namespace Plang.Compiler.Backend.Rust
             //WriteSourceEpilogue(context, source.Stream);
 
             return source;
+        }
+
+        private static string MachineCreationFunDeclPrologue = $@"
+pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{EventTypeName}> {{
+    let(tx_config_to_machine, rx_config_to_machine) = mpsc::channel();
+    let(tx_machine_to_config, rx_machine_to_config) = mpsc::channel();
+
+    let machine_handle = thread::spawn(move || {{
+        let mut state_machine: Box < dyn PStateMachine < Event = {EventTypeName} >>;";
+
+        private static string MachineCreationFunDeclEpilogue = @"
+
+        state_machine.add_to_config();
+
+        state_machine.answer_requests();
+    });
+
+    MP::Machine {
+        thread_handle: machine_handle,
+        tx_config_to_machine,
+        rx_machine_to_config,
+        execute_status: MP::ExecutionStatus::CanExecuteFurther,
+    }
+}";
+
+        private void WriteMachineCreationFunction(CompilationContext context, StringWriter output, Scope globalScope)
+        {
+            context.WriteLine(output, MachineCreationFunDeclPrologue);
+
+            context.WriteLine(output, "match name {");
+
+            foreach (IPDecl decl in globalScope.AllDecls)
+            {
+                switch (decl)
+                {
+                    case Machine machine:
+                        string machine_name = context.Names.GetNameForDecl(machine);
+
+                        context.WriteLine(output, $"\"{machine_name}\" => {{");
+                        context.Write(output, $"state_machine = ");
+                        context.WriteLine(output, $"{machine_name}::new(tx_machine_to_config, rx_config_to_machine, args)");
+                        context.WriteLine(output, "}");
+                        break;
+
+                    default:
+                        break;
+                }
+            }
+
+            context.WriteLine(output, "_ => panic!(\"Unrecognized machine name {}\", name),");
+
+            context.WriteLine(output, "}");
+
+            context.WriteLine(output, MachineCreationFunDeclEpilogue);
         }
 
         private void WriteInitializeInterfaces(CompilationContext context, StringWriter output,
@@ -134,7 +212,9 @@ namespace Plang.Compiler.Backend.Rust
             context.WriteLine(output, "use crate::message_passing as MP;");
             context.WriteLine(output, "use crate::p_state_machine::PStateMachine;");
             context.WriteLine(output, "use crate::p_value as PV;");
-            context.WriteLine(output, "use crate::p_state_machine as PSM;");
+            context.WriteLine(output, "use crate::p_event as EV;");
+            context.WriteLine(output, "use crate::p_value::Clonable;");
+            context.WriteLine(output, "");
             context.WriteLine(output, "use std::sync::mpsc;");
             context.WriteLine(output, "use std::thread;");
             // Rust Code Ends
@@ -473,13 +553,22 @@ namespace Plang.Compiler.Backend.Rust
             
         }
 
+        private static string DefaultFunName = "default_function";
+
+        private static string DefaultFunction = $@"
+    fn {DefaultFunName}(&mut self, e: {EventTypeName}) {{
+        self.common_data.execution_status = MP::default_status();
+        return
+    }}
+";
+
         private void WriteMachine(CompilationContext context, StringWriter output, Machine machine)
         {
             context.WriteLine(output, "/*");
             WriteNameSpacePrologue(context, output);
 
-            string declName = context.Names.GetNameForDecl(machine);
-            context.WriteLine(output, $"internal partial class {declName} : PMachine");
+            string machine_name = context.Names.GetNameForDecl(machine);
+            context.WriteLine(output, $"internal partial class {machine_name} : PMachine");
             context.WriteLine(output, "{");
 
             foreach (Variable field in machine.Fields)
@@ -520,12 +609,12 @@ namespace Plang.Compiler.Backend.Rust
 
             // Rust Code Begins
             // enum for all states of machine
-            WriteStates(context, output, machine.States, declName);
+            WriteStates(context, output, machine.States, machine_name);
 
             // machine declaration
-            context.WriteLine(output, $"pub struct {declName}");
+            context.WriteLine(output, $"pub struct {machine_name}");
             context.WriteLine(output, "{");
-            context.WriteLine(output, $"common_data: MD::CommonMachineData<Events, {declName}State>,");
+            context.WriteLine(output, $"common_data: MD::CommonMachineData<{EventTypeName}, {machine_name}State>,");
             foreach (Variable field in machine.Fields)
             {
                 context.WriteLine(output, $"{context.Names.GetNameForDecl(field)}: {GetRustType(field.Type)},");
@@ -533,7 +622,7 @@ namespace Plang.Compiler.Backend.Rust
             context.WriteLine(output, "}");
 
             // implementation block
-            context.WriteLine(output, $"impl {declName}");
+            context.WriteLine(output, $"impl {machine_name}");
             context.WriteLine(output, "{");
 
             // constructor
@@ -542,12 +631,201 @@ namespace Plang.Compiler.Backend.Rust
             // transition functions
             foreach (Function method in machine.Methods)
             {
-                WriteRustFunction(context, output, method, declName, machine.Fields);
+                WriteRustFunction(context, output, method, machine_name, machine.Fields);
             }
+
+            context.WriteLine(output, DefaultFunction);
 
             // ending the impl for state machine
             context.WriteLine(output, "}");
+            context.WriteLine(output, "");
+
+            WriteMachineTrait(context, output, machine);
             // Rust Code Ends
+        }
+
+        private static string SendEventFunDecl = @"
+    fn send_event(&self, receiver: M::Index, event: Self::Event) {
+        self.common_data.send_event(receiver, event)
+    }";
+
+        private static string CreateMachineFunDecl = @"
+    fn create_machine(&self, name: &'static str, args: PV::PValue) -> M::Index {
+        let machine = create_new_machine(name, args);
+        let create_machine_req = MP::MachineToConfigMsg::CreateMachineRequest(machine);
+        self.common_data
+            .tx_machine_to_config
+            .send(create_machine_req)
+            .unwrap();
+
+        if let MP::ConfigToMachineMsg::CreateMachineResponse(new_index) =
+            self.common_data.rx_config_to_machine.recv().unwrap()
+        {
+            new_index
+        } else {
+            panic!(
+                ""Machine {} did not receive create machine response"",
+                self.common_data.self_id.print()
+            )
+        }
+    }";
+
+        private static string AddToConfigFunDecl = @"
+    fn add_to_config(&mut self) {
+        self.common_data.add_to_config()
+    }";
+
+        private static string AnswerRequestsFunDecl = @"
+    fn answer_requests(&mut self) {
+        loop {
+            let req = self.common_data.rx_config_to_machine.recv().unwrap();
+
+            match req {
+                MP::ConfigToMachineMsg::ExecuteRequest(e_opt) => {
+                    self.execute(e_opt);
+                    let execution_status = self.common_data.execution_status;
+                    self.common_data
+                        .tx_machine_to_config
+                        .send(MP::MachineToConfigMsg::ExecuteResponse(execution_status))
+                        .unwrap();
+
+                    if matches!(execution_status, MP::ExecutionStatus::Terminated) {
+                        break;
+                    }
+                }
+                _ => {
+                    panic!(
+                        ""Machine {} received an invalid request"",
+                        self.common_data.self_id.print()
+                    )
+                }
+            }
+        }
+    }";
+
+        private static string NameFunDecl = @"
+    fn name(&self) -> &'static str {
+        self.common_data.name()
+    }";
+
+        private static string IndexFunDecl = @"
+    fn index(&self) -> M::Index {
+        self.common_data.index()
+    }";
+
+        private static string PrintFunDecl = @"
+    fn print(&self) {
+        self.common_data.print()
+    }";
+
+        private static string UpdateIdFunDecl = @"
+    fn update_id(&mut self, instance: i32) {
+        self.common_data.update_id(instance)
+    }";
+
+        private void WriteMachineTrait(CompilationContext context, StringWriter output, Machine machine)
+        {
+            string machine_name = context.Names.GetNameForDecl(machine);
+            context.WriteLine(output, $"impl PStateMachine for {machine_name} {{");
+
+            context.WriteLine(output, $"type Event = {EventTypeName};");
+
+            context.WriteLine(output, SendEventFunDecl);
+
+            context.WriteLine(output, CreateMachineFunDecl);
+
+            context.WriteLine(output, AddToConfigFunDecl);
+
+            context.WriteLine(output, AnswerRequestsFunDecl);
+
+            context.WriteLine(output, NameFunDecl);
+
+            context.WriteLine(output, IndexFunDecl);
+
+            WriteExecuteFunDecl(context, output, machine);
+
+            context.WriteLine(output, PrintFunDecl);
+
+            context.WriteLine(output, UpdateIdFunDecl);
+
+            context.WriteLine(output, "}");
+        }
+
+        private void WriteExecuteFunDecl(CompilationContext context, StringWriter output, Machine machine)
+        {
+            context.WriteLine(output, "");
+
+            context.WriteLine(output, "fn execute(&mut self, event: Self::Event) {");
+
+            context.WriteLine(output, "match self.common_data.current_state {");
+
+            string machine_name = context.Names.GetNameForDecl(machine);
+
+            foreach (State state in machine.States)
+            {
+                WriteTransitionFunctionsForState(context, output, state, machine_name);
+            }
+
+            context.WriteLine(output, "}");
+
+            context.WriteLine(output, "}");
+        }
+
+        private void WriteTransitionFunctionsForState(CompilationContext context, StringWriter output, State state, string machine_name)
+        {
+            string state_name = context.Names.GetNameForDecl(state);
+
+            context.WriteLine(output, $"{machine_name}State::{state_name} =>");
+
+            context.WriteLine(output, "{");
+
+            context.WriteLine(output, "match event.name");
+
+            context.WriteLine(output, "{");
+
+            if (state.Entry != null)
+            {
+                string entry_fname = context.Names.GetNameForDecl(state.Entry);
+                string event_or_ctor = state.IsStart ? $"{EventTypeName} {{ name: {EventNameTypeName}::DefaultEvent, payload: self.common_data.payload.clone() }}" : "event";
+                context.WriteLine(
+                        output,
+                        $"{EventNameTypeName}::DefaultEvent => self.{entry_fname}({event_or_ctor}),");
+            }
+            else
+            {
+                context.WriteLine(
+                        output,
+                        $"{EventNameTypeName}::DefaultEvent => self.{DefaultFunName}(event),");
+            }
+
+            foreach (KeyValuePair<PEvent, IStateAction> ev_handler in state.AllEventHandlers)
+            {
+                PEvent ev = ev_handler.Key;
+                IStateAction handler = ev_handler.Value;
+
+                string ev_name = context.Names.GetNameForDecl(ev);
+
+                switch (handler)
+                {
+                    case EventDoAction eventDoAction:
+                        var targetDoFunctionName = context.Names.GetNameForDecl(eventDoAction.Target);
+                        targetDoFunctionName = eventDoAction.Target.IsAnon ? targetDoFunctionName : $"_{targetDoFunctionName}";
+                        context.WriteLine(
+                            output,
+                            $"{EventNameTypeName}::{ev_name} => self.{targetDoFunctionName}(event),");
+                        break;
+
+                    default:
+                        throw new NotImplementedException();
+                }
+            }
+
+            context.WriteLine(output, @"_ => panic!(""unhandled event {:?} in state {:?}"", event.name, self.common_data.current_state),");
+
+
+            context.WriteLine(output, "}");
+
+            context.WriteLine(output, "}");
         }
 
         private void WriteStates(CompilationContext context, StringWriter output,
@@ -590,9 +868,20 @@ namespace Plang.Compiler.Backend.Rust
         {
             string declName = context.Names.GetNameForDecl(machine);
             context.WriteLine(output, "pub fn new(");
-            context.WriteLine(output, "tx_machine_to_config: mpsc::Sender<MP::MachineToConfigMsg<Events>>,");
-            context.WriteLine(output, "rx_config_to_machine: mpsc::Receiver<MP::ConfigToMachineMsg<Events>>,");
-            context.WriteLine(output, "args: PV::PValue) -> Box<Self>");
+            context.WriteLine(output, $"tx_machine_to_config: mpsc::Sender<MP::MachineToConfigMsg<{EventTypeName}>>,");
+            context.WriteLine(output, $"rx_config_to_machine: mpsc::Receiver<MP::ConfigToMachineMsg<{EventTypeName}>>,");
+            string arg_type = "PV::PValue";
+            /*
+            if (machine.StartState.Entry != null)
+            {
+                Function entry_func = machine.StartState.Entry;
+                if (entry_func.Signature.ParameterTypes.Any())
+                {
+                    arg_type = GetRustType(entry_func.Signature.ParameterTypes.First());
+                }
+            }
+            */
+            context.WriteLine(output, $"arg: {arg_type}) -> Box<Self>");
             context.WriteLine(output, "{");
             context.WriteLine(output, $"let name = \"{declName}\";");
             context.WriteLine(output, $"let self_id = M::Index::create_index(name, 0);");
@@ -604,13 +893,13 @@ namespace Plang.Compiler.Backend.Rust
 
             context.WriteLine(output, $"Box::new({declName}");
             context.WriteLine(output, "{");
-            context.WriteLine(output, "common_data: MD::CommonMachineData::create(");
-            context.WriteLine(output, "name,");
-            context.WriteLine(output, "self_id,");
-            context.WriteLine(output, "current_state,");
-            context.WriteLine(output, "tx_machine_to_config,");
-            context.WriteLine(output, "rx_config_to_machine,");
-            context.WriteLine(output, "args,");
+            context.WriteLine(output, "  common_data: MD::CommonMachineData::create(");
+            context.WriteLine(output, "  name,");
+            context.WriteLine(output, "  self_id,");
+            context.WriteLine(output, "  current_state,");
+            context.WriteLine(output, "  tx_machine_to_config,");
+            context.WriteLine(output, "  rx_config_to_machine,");
+            context.WriteLine(output, "  arg,");
             context.WriteLine(output, "),");
             foreach (Variable field in machine.Fields)
             {
@@ -1600,7 +1889,7 @@ namespace Plang.Compiler.Backend.Rust
             string functionParameters = "";
             if (function.IsAnon)
             {
-                functionParameters = "&mut self, e: Option<Events>";
+                functionParameters = $"&mut self, e: {EventTypeName}";
             }
             else
             {
@@ -1625,7 +1914,32 @@ namespace Plang.Compiler.Backend.Rust
         {
             context.WriteLine(output, "{");
             context.WriteLine(output, "self.common_data.execution_status = MP::default_status();");
-            
+
+            if (function.IsAnon)
+            {
+                if (function.Signature.Parameters.Any())
+                {
+                    Variable param = function.Signature.Parameters.First();
+                    context.Write(output, $"let {context.Names.GetNameForDecl(param)} = e.payload");
+
+                    string param_type = GetRustType(function.Signature.ParameterTypes.First());
+
+                    switch (param_type)
+                    {
+                        case "i32":
+                            context.Write(output, $".extract_int()");
+                            break;
+                        case "M::Index":
+                            context.Write(output, $".extract_machine()");
+                            break;
+                        default:
+                            break;
+
+                    }
+                    context.WriteLine(output, ";");
+                }
+            }
+
             foreach (Variable local in function.LocalVariables)
             {
                 PLanguageType type = local.Type;
@@ -1640,6 +1954,34 @@ namespace Plang.Compiler.Backend.Rust
 
             context.WriteLine(output, "}");
         }
+
+        private static string InterfaceToName(string interface_name)
+        {
+            return interface_name.Remove(0, 2);
+        }
+
+        private void WritePValueExpr(CompilationContext context, StringWriter output, IPExpr expr, IEnumerable<Variable> machine_fields)
+        {
+            string arg_type = GetRustType(expr.Type);
+
+            switch (arg_type)
+            {
+                case "i32":
+                    context.Write(output, $"PV::PValue::Int(");
+                    break;
+                case "M::Index":
+                    context.Write(output, $"PV::PValue::Machine(");
+                    break;
+                default:
+                    break;
+
+            }
+
+            WriteRustExpr(context, output, expr, machine_fields);
+
+            context.Write(output, ")");
+        }
+
 
         private void WriteRustStmt(CompilationContext context, StringWriter output, Function function,
             IPStmt stmt, string machine_name, IEnumerable<Variable> machine_fields)
@@ -1691,9 +2033,10 @@ namespace Plang.Compiler.Backend.Rust
                     break;
 
                 case CtorStmt ctorStmt:
+                    string new_machine_name = InterfaceToName(context.Names.GetNameForDecl(ctorStmt.Interface));
+
                     context.Write(output,
-                        $"currentMachine.CreateInterface<{context.Names.GetNameForDecl(ctorStmt.Interface)}>(");
-                    context.Write(output, "currentMachine");
+                        $"self.create_machine(\"{new_machine_name}\", ");
                     if (ctorStmt.Arguments.Any())
                     {
                         context.Write(output, ", ");
@@ -1713,9 +2056,10 @@ namespace Plang.Compiler.Backend.Rust
                         }
                         else
                         {
-                            WriteExpr(context, output, ctorStmt.Arguments.First());
+                            WritePValueExpr(context, output, ctorStmt.Arguments.First(), machine_fields);
                         }
                     }
+                    else context.Write(output, "PV::PValue::DefaultVal");
 
                     context.WriteLine(output, ");");
                     break;
@@ -1747,7 +2091,7 @@ namespace Plang.Compiler.Backend.Rust
                     // last statement
                     // set the execution status to CanExecuteFurther
                     // otherwise defaults to WaitingForEvent
-                    context.WriteLine(output, $"self.current_state = {machine_name}State::{context.Names.GetNameForDecl(gotoStmt.State)};");
+                    context.WriteLine(output, $"self.common_data.current_state = {machine_name}State::{context.Names.GetNameForDecl(gotoStmt.State)};");
                     context.WriteLine(output, "self.common_data.execution_status = MP::ExecutionStatus::CanExecuteFurther;");
                     context.WriteLine(output, "return");
                     break;
@@ -1922,13 +2266,13 @@ namespace Plang.Compiler.Backend.Rust
 
                 case SendStmt sendStmt:
                     context.Write(output, "self.send_event(");
-                    WriteExpr(context, output, sendStmt.MachineExpr);
-                    context.Write(output, ", (");
-                    WriteExpr(context, output, sendStmt.Evt);
+                    WriteRustExpr(context, output, sendStmt.MachineExpr, machine_fields);
+                    context.Write(output, $", {EventTypeName} {{ name: ");
+                    WriteRustExpr(context, output, sendStmt.Evt, machine_fields);
 
+                    context.Write(output, ", payload: ");
                     if (sendStmt.Arguments.Any())
                     {
-                        context.Write(output, ", ");
                         if (sendStmt.Arguments.Count > 1)
                         {
                             //create tuple from rvaluelist
@@ -1948,11 +2292,15 @@ namespace Plang.Compiler.Backend.Rust
                         }
                         else
                         {
-                            WriteExpr(context, output, sendStmt.Arguments.First());
+                            WritePValueExpr(context, output, sendStmt.Arguments.First(), machine_fields);
                         }
                     }
+                    else
+                    {
+                        context.Write(output, "PV::PValue::DefaultVal");
+                    }
 
-                    context.WriteLine(output, "));");
+                    context.WriteLine(output, "});");
                     break;
 
                 case SwapAssignStmt swapStmt:
@@ -2163,12 +2511,12 @@ namespace Plang.Compiler.Backend.Rust
                     break;
 
                 case CtorExpr ctorExpr:
+                    string new_machine_name = InterfaceToName(context.Names.GetNameForDecl(ctorExpr.Interface));
+
                     context.Write(output,
-                        $"currentMachine.CreateInterface<{context.Names.GetNameForDecl(ctorExpr.Interface)}>( ");
-                    context.Write(output, "currentMachine");
+                        $"self.create_machine(\"{new_machine_name}\", ");
                     if (ctorExpr.Arguments.Any())
                     {
-                        context.Write(output, ", ");
                         if (ctorExpr.Arguments.Count > 1)
                         {
                             //create tuple from rvaluelist
@@ -2177,7 +2525,7 @@ namespace Plang.Compiler.Backend.Rust
                             foreach (IPExpr ctorExprArgument in ctorExpr.Arguments)
                             {
                                 context.Write(output, septor);
-                                WriteExpr(context, output, ctorExprArgument);
+                                WriteRustExpr(context, output, ctorExprArgument, machine_fields);
                                 septor = ",";
                             }
 
@@ -2185,9 +2533,10 @@ namespace Plang.Compiler.Backend.Rust
                         }
                         else
                         {
-                            WriteExpr(context, output, ctorExpr.Arguments.First());
+                            WritePValueExpr(context, output, ctorExpr.Arguments.First(), machine_fields);
                         }
                     }
+                    else context.Write(output, "PV::PValue::DefaultVal");
 
                     context.Write(output, ")");
                     break;
@@ -2206,16 +2555,16 @@ namespace Plang.Compiler.Backend.Rust
                     switch (eventName)
                     {
                         case "Halt":
-                            context.Write(output, "EventName::PHalt");
+                            context.Write(output, $"{EventNameTypeName}::PHalt");
                             break;
 
                         case "DefaultEvent":
-                            context.Write(output, "EventName::DefaultEvent");
+                            context.Write(output, $"{EventNameTypeName}::DefaultEvent");
                             break;
 
                         default:
                             // QUES: Why are we taking the default value for type? What about the argument itself
-                            context.Write(output, $"EventName::{eventName}");
+                            context.Write(output, $"{EventNameTypeName}::{eventName}");
                             break;
                     }
 
@@ -2311,7 +2660,7 @@ namespace Plang.Compiler.Backend.Rust
                     break;
 
                 case ThisRefExpr _:
-                    context.Write(output, "self.self_id");
+                    context.Write(output, "self.common_data.self_id");
                     break;
 
                 case UnaryOpExpr unaryOpExpr:
@@ -2369,7 +2718,7 @@ namespace Plang.Compiler.Backend.Rust
         private void WriteRustClone(CompilationContext context, StringWriter output, IExprTerm cloneExprTerm, IEnumerable<Variable> machine_fields)
         {
             WriteRustExpr(context, output, cloneExprTerm, machine_fields);
-            return;
+            
             /*
             if (!(cloneExprTerm is IVariableRef variableRef))
             {
@@ -2594,13 +2943,13 @@ namespace Plang.Compiler.Backend.Rust
                     return "\"\"";
 
                 case PrimitiveType machineType when machineType.IsSameTypeAs(PrimitiveType.Machine):
-                    return "M::dummy_index()";
+                    return "M::Index::dummy_index()";
 
                 case PermissionType _:
-                    return "M::dummy_index()";
+                    return "M::Index::dummy_index()";
 
                 case PrimitiveType eventType when eventType.IsSameTypeAs(PrimitiveType.Event):
-                    return "(EventName::DefaultEvent, PV::PValue::DefaultVal)";
+                    return $"{EventNameTypeName}::DefaultEvent";
 
                 case PrimitiveType nullType when nullType.IsSameTypeAs(PrimitiveType.Null):
                     return "null";
