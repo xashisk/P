@@ -2,7 +2,7 @@
 <Project>
 <ProjectName>Simple</ProjectName>
 <InputFiles>
-	<PFile>./</PFile>
+	<PFile>./Simple2.p</PFile>
 </InputFiles>
 <OutputDir>./PGenerated/</OutputDir>
 </Project>

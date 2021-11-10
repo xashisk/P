@@ -24,6 +24,7 @@ namespace Plang.Compiler.Backend.Rust
 
         private static string EventTypeName = "ProtocolEvent";
         private static string EventNameTypeName = "ProtocolEventName";
+        private static string DefaultEventName = "DefaultEvent";
 
         private static string EventTypeDecl = $@"#[derive(Debug)]
 pub struct {EventTypeName} {{
@@ -34,7 +35,7 @@ pub struct {EventTypeName} {{
         private static string EventTraitDecl = @$"impl EV::PEvent for {EventTypeName} {{
     fn default() -> Self {{
         {EventTypeName} {{
-            name: {EventNameTypeName}::DefaultEvent,
+            name: {EventNameTypeName}::{DefaultEventName},
             payload: PV::PValue::DefaultVal
         }}
     }}
@@ -215,6 +216,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
             context.WriteLine(output, "use crate::p_event as EV;");
             context.WriteLine(output, "use crate::p_value::Clonable;");
             context.WriteLine(output, "");
+            context.WriteLine(output, "use std::collections::HashMap;");
             context.WriteLine(output, "use std::sync::mpsc;");
             context.WriteLine(output, "use std::thread;");
             // Rust Code Ends
@@ -789,13 +791,13 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                 string event_or_ctor = state.IsStart ? $"{EventTypeName} {{ name: {EventNameTypeName}::DefaultEvent, payload: self.common_data.payload.clone() }}" : "event";
                 context.WriteLine(
                         output,
-                        $"{EventNameTypeName}::DefaultEvent => self.{entry_fname}({event_or_ctor}),");
+                        $"{EventNameTypeName}::{DefaultEventName} => self.{entry_fname}({event_or_ctor}),");
             }
             else
             {
                 context.WriteLine(
                         output,
-                        $"{EventNameTypeName}::DefaultEvent => self.{DefaultFunName}(event),");
+                        $"{EventNameTypeName}::{DefaultEventName} => self.{DefaultFunName}(event),");
             }
 
             foreach (KeyValuePair<PEvent, IStateAction> ev_handler in state.AllEventHandlers)
@@ -871,16 +873,6 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
             context.WriteLine(output, $"tx_machine_to_config: mpsc::Sender<MP::MachineToConfigMsg<{EventTypeName}>>,");
             context.WriteLine(output, $"rx_config_to_machine: mpsc::Receiver<MP::ConfigToMachineMsg<{EventTypeName}>>,");
             string arg_type = "PV::PValue";
-            /*
-            if (machine.StartState.Entry != null)
-            {
-                Function entry_func = machine.StartState.Entry;
-                if (entry_func.Signature.ParameterTypes.Any())
-                {
-                    arg_type = GetRustType(entry_func.Signature.ParameterTypes.First());
-                }
-            }
-            */
             context.WriteLine(output, $"arg: {arg_type}) -> Box<Self>");
             context.WriteLine(output, "{");
             context.WriteLine(output, $"let name = \"{declName}\";");
@@ -893,7 +885,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
 
             context.WriteLine(output, $"Box::new({declName}");
             context.WriteLine(output, "{");
-            context.WriteLine(output, "  common_data: MD::CommonMachineData::create(");
+            context.WriteLine(output, "common_data: MD::CommonMachineData::create(");
             context.WriteLine(output, "  name,");
             context.WriteLine(output, "  self_id,");
             context.WriteLine(output, "  current_state,");
@@ -1908,6 +1900,32 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
             context.WriteLine(output,
                 $"fn {staticKeyword}{asyncKeyword}{functionName}({functionParameters})");
             WriteRustFunctionBody(context, output, function, machine_name, machine_fields);
+            context.WriteLine(output, "");
+        }
+
+        private string ExtractionExpr(PLanguageType type)
+        {
+            string ret = "";
+
+            string param_type = GetRustType(type);
+
+            switch (param_type)
+            {
+                case "i32":
+                    ret = ".extract_int()";
+                    break;
+                case "M::Index":
+                    ret = ".extract_machine()";
+                    break;
+                case "HashMap<&'static str, PV::PValue>":
+                    ret = ".extract_namedtuple()";
+                    break;
+                default:
+                    break;
+
+            }
+
+            return ret;
         }
 
         private void WriteRustFunctionBody(CompilationContext context, StringWriter output, Function function, string machine_name, IEnumerable<Variable> machine_fields)
@@ -1922,20 +1940,9 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     Variable param = function.Signature.Parameters.First();
                     context.Write(output, $"let {context.Names.GetNameForDecl(param)} = e.payload");
 
-                    string param_type = GetRustType(function.Signature.ParameterTypes.First());
+                    context.Write(output, $"{ExtractionExpr(function.Signature.ParameterTypes.First())}");
 
-                    switch (param_type)
-                    {
-                        case "i32":
-                            context.Write(output, $".extract_int()");
-                            break;
-                        case "M::Index":
-                            context.Write(output, $".extract_machine()");
-                            break;
-                        default:
-                            break;
-
-                    }
+                    
                     context.WriteLine(output, ";");
                 }
             }
@@ -1971,6 +1978,9 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
                 case "M::Index":
                     context.Write(output, $"PV::PValue::Machine(");
+                    break;
+                case "HashMap<&'static str, PV::PValue>":
+                    context.Write(output, $"PV::PValue::NamedTuple(");
                     break;
                 default:
                     break;
@@ -2340,9 +2350,9 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
 
                 case NamedTupleAccessExpr namedTupleAccessExpr:
-                    context.Write(output, "((PrtNamedTuple)");
                     WriteExpr(context, output, namedTupleAccessExpr.SubExpr);
-                    context.Write(output, $")[\"{namedTupleAccessExpr.FieldName}\"]");
+                    context.Write(output, $"[\"{namedTupleAccessExpr.FieldName}\"]");
+                    context.Write(output, $"{ExtractionExpr(namedTupleAccessExpr.Entry.Type)}");
                     break;
 
                 case SeqAccessExpr seqAccessExpr:
@@ -2559,7 +2569,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                             break;
 
                         case "DefaultEvent":
-                            context.Write(output, $"{EventNameTypeName}::DefaultEvent");
+                            context.Write(output, $"{EventNameTypeName}::{DefaultEventName}");
                             break;
 
                         default:
@@ -2617,21 +2627,20 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
 
                 case NamedTupleExpr namedTupleExpr:
-                    string fieldNamesArray = string.Join(",",
-                        ((NamedTupleType)namedTupleExpr.Type).Names.Select(n => $"\"{n}\""));
-                    fieldNamesArray = $"new string[]{{{fieldNamesArray}}}";
-                    context.Write(output, $"(new {GetCSharpType(namedTupleExpr.Type)}({fieldNamesArray}, ");
-                    for (int i = 0; i < namedTupleExpr.TupleFields.Count; i++)
+                    IEnumerable<string> fieldNamesArray = ((NamedTupleType)namedTupleExpr.Type).Names;
+                    context.Write(output, $"PV::PValue::to_hashmap(vec![");
+                    int i = 0;
+                    foreach (string field in fieldNamesArray)
                     {
-                        if (i > 0)
-                        {
-                            context.Write(output, ", ");
-                        }
-
-                        WriteExpr(context, output, namedTupleExpr.TupleFields[i]);
+                        context.Write(output, $"(\"{field}\", ");
+                        WritePValueExpr(context, output, namedTupleExpr.TupleFields[i], machine_fields);
+                        context.Write(output, $")");
+                        i++;
+                        if (i < namedTupleExpr.TupleFields.Count)
+                            context.Write(output, $", ");
                     }
 
-                    context.Write(output, "))");
+                    context.Write(output, "])");
                     break;
 
                 case NondetExpr _:
@@ -2808,7 +2817,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     throw new NotImplementedException();
 
                 case NamedTupleType _:
-                    throw new NotImplementedException();
+                    return "HashMap<&'static str, PV::PValue>";
 
                 case PermissionType _:
                     return "M::Index";
@@ -2925,7 +2934,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     throw new NotImplementedException();
 
                 case NamedTupleType namedTupleType:
-                    throw new NotImplementedException();
+                    return "HashMap::new()";
 
                 case TupleType tupleType:
                     throw new NotImplementedException();
@@ -2949,7 +2958,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     return "M::Index::dummy_index()";
 
                 case PrimitiveType eventType when eventType.IsSameTypeAs(PrimitiveType.Event):
-                    return $"{EventNameTypeName}::DefaultEvent";
+                    return $"{EventNameTypeName}::{DefaultEventName}";
 
                 case PrimitiveType nullType when nullType.IsSameTypeAs(PrimitiveType.Null):
                     return "null";
