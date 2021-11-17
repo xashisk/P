@@ -61,10 +61,7 @@ namespace Plang.Compiler
             else
             {
                 // parse command line options and generate the compilation job
-                //return commandlineParser.ParseCommandLineOptions(commandlineArgs, out job) ? Success : Failure;
-                var projectPath = "/Users/daankus/Documents/Research/P/Tutorial/Simple/Simple.pproj";
-                // Parse the project file and generate the compilation job
-                return commandlineParser.ParseProjectFile(projectPath, out job) ? Success : Failure;
+                return commandlineParser.ParseCommandLineOptions(commandlineArgs, out job) ? Success : Failure;
             }
         }
 

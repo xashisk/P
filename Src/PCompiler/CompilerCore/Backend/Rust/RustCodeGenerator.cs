@@ -208,13 +208,13 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
             context.WriteLine(output, "}");
             context.WriteLine(output, "*/");
             // Rust Code Begins
-            context.WriteLine(output, "use crate::common_machine_data as MD;");
-            context.WriteLine(output, "use crate::machine_index as M;");
-            context.WriteLine(output, "use crate::message_passing as MP;");
-            context.WriteLine(output, "use crate::p_state_machine::PStateMachine;");
-            context.WriteLine(output, "use crate::p_value as PV;");
-            context.WriteLine(output, "use crate::p_event as EV;");
-            context.WriteLine(output, "use crate::p_value::Clonable;");
+            context.WriteLine(output, "use amzn_p_rust::common_machine_data as MD;");
+            context.WriteLine(output, "use amzn_p_rust::machine_index as M;");
+            context.WriteLine(output, "use amzn_p_rust::message_passing as MP;");
+            context.WriteLine(output, "use amzn_p_rust::p_state_machine::PStateMachine;");
+            context.WriteLine(output, "use amzn_p_rust::p_value as PV;");
+            context.WriteLine(output, "use amzn_p_rust::p_event as EV;");
+            context.WriteLine(output, "use amzn_p_rust::p_value::Clonable;");
             context.WriteLine(output, "");
             context.WriteLine(output, "use std::collections::HashMap;");
             context.WriteLine(output, "use std::sync::mpsc;");
@@ -1920,6 +1920,9 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                 case "HashMap<&'static str, PV::PValue>":
                     ret = ".extract_namedtuple()";
                     break;
+                case "HashMap<i32, PV::PValue>":
+                    ret = ".extract_sequence()";
+                    break;
                 default:
                     break;
 
@@ -1981,6 +1984,9 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
                 case "HashMap<&'static str, PV::PValue>":
                     context.Write(output, $"PV::PValue::NamedTuple(");
+                    break;
+                case "HashMap<i32, PV::PValue>":
+                    context.Write(output, $"PV::PValue::Sequence(");
                     break;
                 default:
                     break;
@@ -2128,22 +2134,11 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
 
                 case InsertStmt insertStmt:
-                    bool isMap = PLanguageType.TypeIsOfKind(insertStmt.Variable.Type, TypeKind.Map);
-                    string castOp = isMap ? "(PrtMap)" : "(PrtSeq)";
-                    context.Write(output, $"({castOp}");
-                    WriteExpr(context, output, insertStmt.Variable);
-                    if (isMap)
-                    {
-                        context.Write(output, ").Add(");
-                    }
-                    else
-                    {
-                        context.Write(output, ").Insert(");
-                    }
-
-                    WriteExpr(context, output, insertStmt.Index);
+                    WriteRustExpr(context, output, insertStmt.Variable, machine_fields);
+                    context.Write(output, ".insert(");
+                    WriteRustExpr(context, output, insertStmt.Index, machine_fields);
                     context.Write(output, ", ");
-                    WriteExpr(context, output, insertStmt.Value);
+                    WritePValueExpr(context, output, insertStmt.Value, machine_fields);
                     context.WriteLine(output, ");");
                     break;
 
@@ -2317,10 +2312,10 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     throw new NotImplementedException("Swap Assignment Not Implemented");
 
                 case WhileStmt whileStmt:
-                    context.Write(output, "while (");
-                    WriteExpr(context, output, whileStmt.Condition);
-                    context.WriteLine(output, ")");
-                    WriteStmt(context, output, function, whileStmt.Body);
+                    context.Write(output, "while ");
+                    WriteRustExpr(context, output, whileStmt.Condition, machine_fields);
+                    context.WriteLine(output, "");
+                    WriteRustStmt(context, output, function, whileStmt.Body, machine_name, machine_fields);
                     break;
 
                 default:
@@ -2350,17 +2345,17 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
 
                 case NamedTupleAccessExpr namedTupleAccessExpr:
-                    WriteExpr(context, output, namedTupleAccessExpr.SubExpr);
+                    WriteRustExpr(context, output, namedTupleAccessExpr.SubExpr, machine_fields);
                     context.Write(output, $"[\"{namedTupleAccessExpr.FieldName}\"]");
                     context.Write(output, $"{ExtractionExpr(namedTupleAccessExpr.Entry.Type)}");
                     break;
 
                 case SeqAccessExpr seqAccessExpr:
-                    context.Write(output, "((PrtSeq)");
-                    WriteLValue(context, output, seqAccessExpr.SeqExpr);
-                    context.Write(output, ")[");
+                    WriteRustLValue(context, output, seqAccessExpr.SeqExpr, machine_fields);
+                    context.Write(output, "[&");
                     WriteExpr(context, output, seqAccessExpr.IndexExpr);
                     context.Write(output, "]");
+                    context.Write(output, $"{ExtractionExpr(seqAccessExpr.Type)}");
                     break;
 
                 case TupleAccessExpr tupleAccessExpr:
@@ -2373,8 +2368,6 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     Variable var = variableAccessExpr.Variable;
                     if (machine_fields.Contains(var)) context.Write(output, "self.");
                     string varname = context.Names.GetNameForDecl(variableAccessExpr.Variable);
-                    string payload = "payload";
-                    if (varname.Equals(payload)) context.Write(output, "self.common_data.");
                     context.Write(output, varname);
                     break;
 
@@ -2394,52 +2387,9 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
 
                 case BinOpExpr binOpExpr:
-                    //handle eq and noteq differently
-                    if (binOpExpr.Operation == BinOpType.Eq || binOpExpr.Operation == BinOpType.Neq)
-                    {
-                        string negate = binOpExpr.Operation == BinOpType.Neq ? "!" : "";
-                        context.Write(output, $"({negate}PrtValues.SafeEquals(");
-                        if (PLanguageType.TypeIsOfKind(binOpExpr.Lhs.Type, TypeKind.Enum))
-                        {
-                            context.Write(output, "PrtValues.Box((long) ");
-                            WriteRustExpr(context, output, binOpExpr.Lhs, machine_fields);
-                            context.Write(output, "),");
-                        }
-                        else
-                        {
-                            WriteRustExpr(context, output, binOpExpr.Lhs, machine_fields);
-                            context.Write(output, ",");
-                        }
-
-                        if (PLanguageType.TypeIsOfKind(binOpExpr.Rhs.Type, TypeKind.Enum))
-                        {
-                            context.Write(output, "PrtValues.Box((long) ");
-                            WriteRustExpr(context, output, binOpExpr.Rhs, machine_fields);
-                            context.Write(output, ")");
-                        }
-                        else
-                        {
-                            WriteRustExpr(context, output, binOpExpr.Rhs, machine_fields);
-                        }
-
-                        context.Write(output, "))");
-                    }
-                    else
-                    {
-                        if (PLanguageType.TypeIsOfKind(binOpExpr.Lhs.Type, TypeKind.Enum))
-                        {
-                            context.Write(output, "(long)");
-                        }
-
-                        WriteRustExpr(context, output, binOpExpr.Lhs, machine_fields);
-                        context.Write(output, $" {BinOpToStr(binOpExpr.Operation)} ");
-                        if (PLanguageType.TypeIsOfKind(binOpExpr.Rhs.Type, TypeKind.Enum))
-                        {
-                            context.Write(output, "(long)");
-                        }
-
-                        WriteRustExpr(context, output, binOpExpr.Rhs, machine_fields);
-                    }
+                    WriteRustExpr(context, output, binOpExpr.Lhs, machine_fields);
+                    context.Write(output, $" {BinOpToStr(binOpExpr.Operation)} ");
+                    WriteRustExpr(context, output, binOpExpr.Rhs, machine_fields);
 
                     break;
 
@@ -2652,9 +2602,9 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     break;
 
                 case SizeofExpr sizeofExpr:
-                    context.Write(output, "((PrtInt)(");
-                    WriteExpr(context, output, sizeofExpr.Expr);
-                    context.Write(output, ").Count)");
+                    WriteRustExpr(context, output, sizeofExpr.Expr, machine_fields);
+                    context.Write(output, ".len()");
+                    context.Write(output, " as i32");
                     break;
 
                 case StringExpr stringExpr:
@@ -2847,7 +2797,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     return "";
 
                 case SequenceType _:
-                    throw new NotImplementedException();
+                    return "HashMap<i32, PV::PValue>";
 
                 case SetType _:
                     throw new NotImplementedException();
@@ -2928,7 +2878,7 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
                     throw new NotImplementedException();
 
                 case SequenceType sequenceType:
-                    throw new NotImplementedException();
+                    return "HashMap::new()";
 
                 case SetType setType:
                     throw new NotImplementedException();
@@ -3024,6 +2974,12 @@ pub fn create_new_machine(name: &'static str, args: PV::PValue) -> MP::Machine<{
 
                 case BinOpType.Or:
                     return "||";
+
+                case BinOpType.Eq:
+                    return "==";
+
+                case BinOpType.Neq:
+                    return "!=";
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(binOpType), binOpType, null);
