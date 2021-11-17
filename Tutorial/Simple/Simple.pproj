@@ -4,5 +4,6 @@
 <InputFiles>
 	<PFile>./Simple2.p</PFile>
 </InputFiles>
+<Target>Rust</Target>
 <OutputDir>./PGenerated/</OutputDir>
 </Project>
