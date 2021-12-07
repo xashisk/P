@@ -11,21 +11,21 @@ public class Disjunctive<T> implements Domain<T> {
     @Getter
     private final Set<T> values;
 
-    Disjunctive (Collection<T> values) {
+    public Disjunctive (Collection<T> values) {
         this.values = new HashSet<>(values);
     }
 
-    Disjunctive (T value) {
+    public Disjunctive (T value) {
         this.values = Collections.singleton(value);
     }
 
 
     @Override
-    public boolean canJoin(Domain d) {
+    public boolean canJoin(Domain<T> d) {
         if (!(d instanceof Disjunctive<?>)) {
             return false;
         }
-        Disjunctive disj = (Disjunctive<?>) d;
+        Disjunctive<T> disj = (Disjunctive<T>) d;
         if (values.isEmpty() || disj.getValues().isEmpty()) {
             return true;
         }
@@ -65,7 +65,28 @@ public class Disjunctive<T> implements Domain<T> {
     }
 
     @Override
-    public Set<T> concretize() {
-        return values;
+    public Domain<Boolean> domainEquals(Domain<T> other) {
+        if (other instanceof Disjunctive) {
+            Set<Boolean> resultValues = new HashSet<>();
+            for (T value : this.values) {
+                if (((Disjunctive<T>) other).values.contains(value)) {
+                    resultValues.add(true);
+                } else {
+                    resultValues.add(false);
+                }
+                if (resultValues.size() == 2) {
+                    break;
+                }
+            }
+            return DomainManager.fromConcrete(resultValues);
+        }
+        return DomainManager.fromConcrete(false);
     }
+
+    @Override
+    public T concretize() {
+        if (values.size() == 1) { return values.iterator().next(); }
+        return null;
+    }
+
 }

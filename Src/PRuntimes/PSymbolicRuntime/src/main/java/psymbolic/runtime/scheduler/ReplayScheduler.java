@@ -81,8 +81,8 @@ public class ReplayScheduler extends Scheduler {
     }
 
     @Override
-    public ValueSummary getNextElement(ListVS<? extends ValueSummary> candidates, Guard pc) {
-        ValueSummary res = getNextElementFlattener(schedule.getRepeatElement(choiceDepth));
+    public <T extends ValueSummary<T>> ValueSummary<T> getNextElement(ListVS<T> candidates, Guard pc) {
+        ValueSummary<T> res = getNextElementFlattener((PrimitiveVS<T>) schedule.getRepeatElement(choiceDepth));
         choiceDepth++;
         return res;
     }

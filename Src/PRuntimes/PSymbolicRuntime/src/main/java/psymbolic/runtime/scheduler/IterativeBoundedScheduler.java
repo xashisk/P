@@ -83,8 +83,7 @@ public class IterativeBoundedScheduler extends Scheduler {
                            Consumer<Integer> clearBacktrack, BiConsumer<PrimitiveVS, Integer> addRepeat,
                            BiConsumer<List, Integer> addBacktrack, Supplier<List> getChoices,
                            Function<List, PrimitiveVS> generateNext) {
-        List<PrimitiveVS> choices = new ArrayList();
-
+        List<PrimitiveVS> choices = new ArrayList<>();
         if (depth < schedule.size()) {
             PrimitiveVS repeat = getRepeat.apply(depth);
             if (!repeat.getUniverse().isFalse()) {
@@ -104,13 +103,13 @@ public class IterativeBoundedScheduler extends Scheduler {
             choices = choices.stream().map(x -> x.restrict(schedule.getFilter())).filter(x -> !(x.getUniverse().isFalse())).collect(Collectors.toList());
         }
 
-        List<PrimitiveVS> chosen = new ArrayList();
-        List<PrimitiveVS> backtrack = new ArrayList();
+        List<PrimitiveVS<?>> chosen = new ArrayList<>();
+        List<PrimitiveVS<?>> backtrack = new ArrayList<>();
         for (int i = 0; i < choices.size(); i++) {
             if (i < bound) chosen.add(choices.get(i));
             else backtrack.add(choices.get(i));
         }
-        PrimitiveVS chosenVS = generateNext.apply(chosen);
+        PrimitiveVS<?> chosenVS = generateNext.apply(chosen);
         addRepeat.accept(chosenVS, depth);
         addBacktrack.accept(backtrack, depth);
         schedule.restrictFilterForDepth(depth);
@@ -148,9 +147,9 @@ public class IterativeBoundedScheduler extends Scheduler {
     }
 
     @Override
-    public ValueSummary getNextElement(ListVS<? extends ValueSummary> candidates, Guard pc) {
+    public <T extends ValueSummary<T>> ValueSummary<T> getNextElement(ListVS<T> candidates, Guard pc) {
         int depth = choiceDepth;
-        PrimitiveVS<ValueSummary> res = getNext(depth, configuration.getInputChoiceBound(), schedule::getRepeatElement, schedule::getBacktrackElement,
+        PrimitiveVS<T> res = getNext(depth, configuration.getInputChoiceBound(), schedule::getRepeatElement, schedule::getBacktrackElement,
                 schedule::clearBacktrack, schedule::addRepeatElement, schedule::addBacktrackElement,
                 () -> super.getNextElementChoices(candidates, pc), super::getNextElementHelper);
         choiceDepth = depth + 1;

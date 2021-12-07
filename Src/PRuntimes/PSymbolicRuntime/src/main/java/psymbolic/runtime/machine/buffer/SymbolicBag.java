@@ -63,14 +63,14 @@ public class SymbolicBag<T extends ValueSummary<T>> {
         assert (elements.getUniverse().isTrue());
         ListVS<T> filtered = elements.restrict(pc);
         PrimitiveVS<Integer> size = filtered.size();
-        List<PrimitiveVS> choices = new ArrayList<>();
+        List<PrimitiveVS<Integer>> choices = new ArrayList<>();
         PrimitiveVS<Integer> idx = new PrimitiveVS<>(0).restrict(pc);
         while(BooleanVS.isEverTrue(IntegerVS.lessThan(idx, size))) {
             Guard cond = IntegerVS.lessThan(idx, size).getGuardFor(true);
             choices.add(idx.restrict(cond));
             idx = IntegerVS.add(idx, 1);
         }
-        PrimitiveVS<Integer> index = (PrimitiveVS<Integer>) NondetUtil.getNondetChoice(choices);
+        PrimitiveVS<Integer> index = NondetUtil.getNondetChoice(choices);
         return filtered.restrict(index.getUniverse()).get(index);
     }
     
@@ -78,14 +78,14 @@ public class SymbolicBag<T extends ValueSummary<T>> {
         assert (elements.getUniverse().isTrue());
         ListVS<T> filtered = elements.restrict(pc);
         PrimitiveVS<Integer> size = filtered.size();
-        List<PrimitiveVS> choices = new ArrayList<>();
+        List<PrimitiveVS<Integer>> choices = new ArrayList<>();
         PrimitiveVS<Integer> idx = new PrimitiveVS<>(0).restrict(pc);
         while(BooleanVS.isEverTrue(IntegerVS.lessThan(idx, size))) {
             Guard cond = IntegerVS.lessThan(idx, size).getGuardFor(true);
             choices.add(idx.restrict(cond));
             idx = IntegerVS.add(idx, 1);
         }
-        PrimitiveVS<Integer> index = (PrimitiveVS<Integer>) NondetUtil.getNondetChoice(choices);
+        PrimitiveVS<Integer> index = NondetUtil.getNondetChoice(choices);
         T element = filtered.restrict(index.getUniverse()).get(index);
         elements = elements.removeAt(index);
         return element;

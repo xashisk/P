@@ -40,8 +40,10 @@ public class Concrete<T> implements Domain<T> {
     }
 
     @Override
-    public Set<T> concretize() {
-        return Collections.singleton(value);
+    public Domain<Boolean> domainEquals(Domain<T> other) {
+        return DomainManager.fromConcrete(this.value.equals(other.concretize()));
     }
 
+    @Override
+    public T concretize() { return value; }
 }

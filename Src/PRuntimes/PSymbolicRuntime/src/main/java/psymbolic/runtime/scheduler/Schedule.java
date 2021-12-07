@@ -67,15 +67,15 @@ public class Schedule {
         @Getter
         PrimitiveVS<Integer> repeatInt = new PrimitiveVS<>();
         @Getter
-        PrimitiveVS<ValueSummary> repeatElement = new PrimitiveVS<>();
+        PrimitiveVS<?> repeatElement = new PrimitiveVS<>();
         @Getter
         List<PrimitiveVS<Machine>> backtrackSender = new ArrayList<>();
         @Getter
-        List<PrimitiveVS<Boolean>> backtrackBool = new ArrayList();
+        List<PrimitiveVS<Boolean>> backtrackBool = new ArrayList<>();
         @Getter
         List<PrimitiveVS<Integer>> backtrackInt = new ArrayList<>();
         @Getter
-        List<PrimitiveVS<ValueSummary>> backtrackElement = new ArrayList<>();
+        List<PrimitiveVS<?>> backtrackElement = new ArrayList<>();
         @Getter
         Guard handledUniverse = Guard.constFalse();
 
@@ -97,7 +97,7 @@ public class Schedule {
             for (PrimitiveVS<Integer> integer : backtrackInt) {
                 senderUniverse = senderUniverse.or(integer.getUniverse());
             }
-            for (PrimitiveVS<ValueSummary> element : backtrackElement) {
+            for (PrimitiveVS<?> element : backtrackElement) {
                 senderUniverse = senderUniverse.or(element.getUniverse());
             }
             return senderUniverse;
@@ -155,7 +155,7 @@ public class Schedule {
             repeatInt = choice;
         }
 
-        public void addRepeatElement(PrimitiveVS<ValueSummary> choice) {
+        public void addRepeatElement(PrimitiveVS<?> choice) {
             repeatElement = choice;
         }
 
@@ -176,7 +176,7 @@ public class Schedule {
 
         public void addBacktrackInt(PrimitiveVS<Integer> choice) { if (!choice.isEmptyVS()) backtrackInt.add(choice); }
 
-        public void addBacktrackElement(PrimitiveVS<ValueSummary> choice) { if (!choice.isEmptyVS()) backtrackElement.add(choice); }
+        public void addBacktrackElement(PrimitiveVS<?> choice) { if (!choice.isEmptyVS()) backtrackElement.add(choice); }
 
         public void clearBacktrack() {
             backtrackSender = new ArrayList<>();
@@ -234,7 +234,7 @@ public class Schedule {
         choices.get(depth).addRepeatInt(choice);
     }
 
-    public void addRepeatElement(PrimitiveVS<ValueSummary> choice, int depth) {
+    public void addRepeatElement(PrimitiveVS<?> choice, int depth) {
         if (depth >= choices.size()) {
             choices.add(newChoice());
         }
@@ -268,11 +268,11 @@ public class Schedule {
         }
     }
 
-    public void addBacktrackElement(List<PrimitiveVS<ValueSummary>> elements, int depth) {
+    public void addBacktrackElement(List<PrimitiveVS<?>> elements, int depth) {
         if (depth >= choices.size()) {
             choices.add(newChoice());
         }
-        for (PrimitiveVS<ValueSummary> choice : elements) {
+        for (PrimitiveVS<?> choice : elements) {
             choices.get(depth).addBacktrackElement(choice);
         }
     }
@@ -289,7 +289,7 @@ public class Schedule {
         return choices.get(depth).getRepeatInt();
     }
 
-    public PrimitiveVS<ValueSummary> getRepeatElement(int depth) {
+    public PrimitiveVS<?> getRepeatElement(int depth) {
         return choices.get(depth).getRepeatElement();
     }
 
@@ -305,7 +305,7 @@ public class Schedule {
         return choices.get(depth).getBacktrackInt();
     }
 
-    public List<PrimitiveVS<ValueSummary>> getBacktrackElement(int depth) {
+    public List<PrimitiveVS<?>> getBacktrackElement(int depth) {
         return choices.get(depth).getBacktrackElement();
     }
 
@@ -415,7 +415,7 @@ public class Schedule {
                         pc = pc.and(intChoice.getGuardedValues().get(0).getGuard());
                     }
                     else {
-                        PrimitiveVS<ValueSummary> elementChoice = guarded.getRepeatElement();
+                        PrimitiveVS<?> elementChoice = guarded.getRepeatElement();
                         if (elementChoice.getGuardedValues().size() > 0) {
                             pc = pc.and(elementChoice.getGuardedValues().get(0).getGuard());
                         }

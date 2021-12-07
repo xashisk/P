@@ -9,6 +9,10 @@ import psymbolic.runtime.machine.Machine;
 import psymbolic.runtime.machine.Monitor;
 import psymbolic.runtime.statistics.SearchStats;
 import psymbolic.valuesummary.*;
+import psymbolic.valuesummary.ai.Disjunctive;
+import psymbolic.valuesummary.ai.Domain;
+import psymbolic.valuesummary.ai.DomainManager;
+import psymbolic.valuesummary.ai.Interval;
 import psymbolic.valuesummary.bdd.BDDEngine;
 import psymbolic.runtime.machine.buffer.*;
 
@@ -134,8 +138,8 @@ public class Scheduler implements SymbolicSearch {
         }
     }
 
-    public List<PrimitiveVS> getNextIntegerChoices(PrimitiveVS<Integer> bound, Guard pc) {
-        List<PrimitiveVS> choices = new ArrayList<>();
+    public List<PrimitiveVS<Integer>> getNextIntegerChoices(PrimitiveVS<Integer> bound, Guard pc) {
+        List<PrimitiveVS<Integer>> choices = new ArrayList<>();
         for (int i = 0; i < IntegerVS.maxValue(bound); i++) {
             Guard cond = IntegerVS.lessThan(i, bound).getGuardFor(true);
             choices.add(new PrimitiveVS<>(i).restrict(cond).restrict(pc));
@@ -143,8 +147,8 @@ public class Scheduler implements SymbolicSearch {
         return choices;
     }
 
-    public PrimitiveVS<Integer> getNextInteger(List<PrimitiveVS> candidateIntegers) {
-        PrimitiveVS<Integer> choices = (PrimitiveVS<Integer>) NondetUtil.getNondetChoice(candidateIntegers);
+    public PrimitiveVS<Integer> getNextInteger(List<PrimitiveVS<Integer>> candidateIntegers) {
+        PrimitiveVS<Integer> choices = NondetUtil.getNondetChoice(candidateIntegers);
         schedule.addRepeatInt(choices, choiceDepth);
         choiceDepth++;
         return choices;
@@ -155,48 +159,80 @@ public class Scheduler implements SymbolicSearch {
         return getNextInteger(getNextIntegerChoices(bound, pc));
     }
 
-    public List<PrimitiveVS> getNextBooleanChoices(Guard pc) {
-        List<PrimitiveVS> choices = new ArrayList<>();
+    @Override
+    public PrimitiveDomainVS<Integer> getNextInteger(PrimitiveDomainVS<Integer> bound, Guard pc) {
+        if (bound.getValues().size() == 0) return new PrimitiveDomainVS<>();
+        if (bound.getValues().iterator().next() instanceof Interval<?>) {
+            List<PrimitiveDomainVS<Integer>> toMerge = new ArrayList<>();
+            for (GuardedValue<Domain<Integer>> guardedValue : bound.getGuardedValues()) {
+                Integer high = DomainManager.maxValue(guardedValue.getValue());;
+                toMerge.add(new PrimitiveDomainVS<>(new Interval<>(0, high)).restrict(pc));
+            }
+            return new PrimitiveDomainVS<Integer>().merge(toMerge);
+        }
+        if (bound.getValues().iterator().next() instanceof Disjunctive<?>) {
+            List<PrimitiveDomainVS<Integer>> toMerge = new ArrayList<>();
+            for (GuardedValue<Domain<Integer>> guardedValue : bound.getGuardedValues()) {
+                Integer high = DomainManager.maxValue(guardedValue.getValue());
+                Set<Integer> integers = new HashSet<>();
+                for (int i = 0; i < high; i++) {
+                    integers.add(i);
+                }
+                toMerge.add(new PrimitiveDomainVS<>(new Disjunctive<>(integers)).restrict(pc));
+            }
+            return new PrimitiveDomainVS<Integer>().merge(toMerge);
+        }
+        List<PrimitiveVS<Integer>> toMerge = new ArrayList<>();
+        for (GuardedValue<Domain<Integer>> guardedValue : bound.getGuardedValues()) {
+            Integer high = DomainManager.maxValue(guardedValue.getValue());
+            toMerge.add(new PrimitiveVS<>(high).restrict(guardedValue.getGuard()));
+        }
+        return PrimitiveDomainVS.fromPrimitiveVS(getNextInteger(getNextIntegerChoices(new PrimitiveVS<Integer>().merge(toMerge), pc)));
+    }
+
+    public List<PrimitiveVS<Boolean>> getNextBooleanChoices(Guard pc) {
+        List<PrimitiveVS<Boolean>> choices = new ArrayList<>();
         choices.add(new PrimitiveVS<>(true).restrict(pc));
         choices.add(new PrimitiveVS<>(false).restrict(pc));
         return choices;
     }
 
-    public PrimitiveVS<Boolean> getNextBoolean(List<PrimitiveVS> candidateBooleans) {
-        PrimitiveVS<Boolean> choices = (PrimitiveVS<Boolean>) NondetUtil.getNondetChoice(candidateBooleans);
+    public PrimitiveVS<Boolean> getNextBoolean(List<PrimitiveVS<Boolean>> candidateBooleans) {
+        PrimitiveVS<Boolean> choices = NondetUtil.getNondetChoice(candidateBooleans);
         schedule.addRepeatBool(choices, choiceDepth);
         choiceDepth++;
         return choices;
     }
 
-    @Override
+        @Override
     public PrimitiveVS<Boolean> getNextBoolean(Guard pc) {
         return getNextBoolean(getNextBooleanChoices(pc));
     }
 
-    public List<ValueSummary> getNextElementChoices(ListVS candidates, Guard pc) {
+    public <T extends ValueSummary<T>> List<PrimitiveVS<T>> getNextElementChoices(ListVS<T> candidates, Guard pc) {
         PrimitiveVS<Integer> size = candidates.size();
         PrimitiveVS<Integer> index = new PrimitiveVS<>(0).restrict(size.getUniverse());
-        List<ValueSummary> list = new ArrayList<>();
+        List<PrimitiveVS<T>> list = new ArrayList<>();
         while (BooleanVS.isEverTrue(IntegerVS.lessThan(index, size))) {
             Guard cond = BooleanVS.getTrueGuard(IntegerVS.lessThan(index, size));
-            list.add(candidates.get(index).restrict(pc));
+            T item = candidates.get(index);
+            list.add(new PrimitiveVS<>(item).restrict(cond.and(item.getUniverse())));
             index = IntegerVS.add(index, 1);
         }
         return list;
     }
 
-    public PrimitiveVS<ValueSummary> getNextElementHelper(List<ValueSummary> candidates) {
-        PrimitiveVS<ValueSummary> choices = NondetUtil.getNondetChoice(candidates.stream().map(x -> new PrimitiveVS(x).restrict(x.getUniverse())).collect(Collectors.toList()));
+    public <T> PrimitiveVS<T> getNextElementHelper(List<PrimitiveVS<T>> candidates) {
+        PrimitiveVS<T> choices = NondetUtil.getNondetChoice(candidates);
         schedule.addRepeatElement(choices, choiceDepth);
         choiceDepth++;
         return choices;
     }
 
-    public ValueSummary getNextElementFlattener(PrimitiveVS<ValueSummary> choices) {
-        ValueSummary flattened = null;
-        List<ValueSummary> toMerge = new ArrayList<>();
-        for (GuardedValue<ValueSummary> guardedValue : choices.getGuardedValues()) {
+    public <T extends ValueSummary<T>> ValueSummary<T> getNextElementFlattener(PrimitiveVS<T> choices) {
+        T flattened = null;
+        List<T> toMerge = new ArrayList<>();
+        for (GuardedValue<T> guardedValue : choices.getGuardedValues()) {
             if (flattened == null) {
                 flattened = guardedValue.getValue().restrict(guardedValue.getGuard());
             } else {
@@ -204,20 +240,18 @@ public class Scheduler implements SymbolicSearch {
             }
         }
         if (flattened == null) {
-            flattened = new PrimitiveVS<>();
-        } else {
-            flattened = flattened.merge(toMerge);
+            throw new RuntimeException("Tried to flatten empty set");
         }
-        return flattened;
+        return flattened.merge(toMerge);
     }
 
     @Override
-    public ValueSummary getNextElement(ListVS<? extends ValueSummary> s, Guard pc) {
+    public <T extends ValueSummary<T>> ValueSummary<T> getNextElement(ListVS<T> s, Guard pc) {
         return getNextElementFlattener(getNextElementHelper(getNextElementChoices(s, pc)));
     }
 
     @Override
-    public ValueSummary getNextElement(SetVS<? extends ValueSummary> s, Guard pc) {
+    public <T extends ValueSummary<T>> ValueSummary<T> getNextElement(SetVS<T> s, Guard pc) {
         return getNextElement(s.getElements(), pc);
     }
 
@@ -288,7 +322,7 @@ public class Scheduler implements SymbolicSearch {
         }
     }
 
-    public List<PrimitiveVS> getNextSenderChoices() {
+    public List<PrimitiveVS<Machine>> getNextSenderChoices() {
         // prioritize the create actions
         for (Machine machine : machines) {
             if (!machine.sendBuffer.isEmpty()) {
@@ -334,11 +368,11 @@ public class Scheduler implements SymbolicSearch {
             guardedMachines = filter(guardedMachines, InterleaveOrder.getInstance());
         }
 
-        List<PrimitiveVS> candidateSenders = new ArrayList<>();
+        List<PrimitiveVS<Machine>> candidateSenders = new ArrayList<>();
         for (GuardedValue<Machine> guardedValue : guardedMachines) {
             candidateSenders.add(new PrimitiveVS<>(guardedValue.getValue()).restrict(guardedValue.getGuard()));
         }
-        candidateSenders = getSchedule().filterSleep(candidateSenders);
+//        candidateSenders = getSchedule().filterSleep(candidateSenders);
         return candidateSenders;
     }
 
@@ -410,7 +444,7 @@ public class Scheduler implements SymbolicSearch {
     }
 */
 
-    public PrimitiveVS<Machine> getNextSender(List<PrimitiveVS> candidateSenders) {
+    public PrimitiveVS<Machine> getNextSender(List<PrimitiveVS<Machine>> candidateSenders) {
         PrimitiveVS<Machine> choices = (PrimitiveVS<Machine>) NondetUtil.getNondetChoice(candidateSenders);
         schedule.addRepeatSender(choices, choiceDepth);
         choiceDepth++;

@@ -34,7 +34,9 @@ public interface ValueSummary<T extends ValueSummary<T>> {
              if (type.equals(PrimitiveVS.class)) {
                  return new PrimitiveVS<>(pc);
              }
-             System.out.println(anyVal.restrict(typeGuard));
+             if (type.equals(PrimitiveDomainVS.class)) {
+                 return new PrimitiveDomainVS<>(pc);
+             }
              throw new ClassCastException(String.format("Casting to %s under path constraint %s is not defined",
                      type,
                      pcNotDefined));

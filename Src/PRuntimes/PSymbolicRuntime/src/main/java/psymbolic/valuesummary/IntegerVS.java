@@ -95,13 +95,6 @@ public class IntegerVS {
         return a.getValues().stream().max(Integer::compare).orElse(null);
     }
 
-    /** Get the minimum value that an Integer value summary may take on
-     *
-     * @return The minimum possible value
-     */
-    public static Integer minValue(PrimitiveVS<Integer> a) {
-        return a.getValues().stream().min(Integer::compare).orElse(null);
-    }
 
     /** Detect whether one Integer value summary is equal to another
      *

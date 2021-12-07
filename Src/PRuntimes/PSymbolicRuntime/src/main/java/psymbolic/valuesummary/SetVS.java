@@ -75,6 +75,12 @@ public class SetVS<T extends ValueSummary<T>> implements ValueSummary<SetVS<T>> 
         return elements.getUniverse();
     }
 
+
+    @Override
+    public String toString() {
+        return elements.toString();
+    }
+
     /** Check whether the SetVS contains an element
      *
      * @param itemSummary The element to check for. Should be possible under a subset of the SetVS's conditions.

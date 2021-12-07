@@ -36,7 +36,7 @@ public class ReceiveEventQueue extends EventBag {
         assert (elements.getUniverse().isTrue());
         ListVS<Message> filtered = elements.restrict(pc);
         PrimitiveVS<Integer> size = filtered.size();
-        List<PrimitiveVS> choices = new ArrayList<>();
+        List<PrimitiveVS<Integer>> choices = new ArrayList<>();
         Map<Machine, Guard> targetMap = new HashMap<>();
         PrimitiveVS<Integer> idx = new PrimitiveVS<>(0).restrict(pc);
         while(BooleanVS.isEverTrue(IntegerVS.lessThan(idx, size))) {
@@ -53,7 +53,7 @@ public class ReceiveEventQueue extends EventBag {
             choices.add(idx.restrict(cond.and(add)));
             idx = IntegerVS.add(idx, 1);
         }
-        PrimitiveVS<Integer> index = (PrimitiveVS<Integer>) NondetUtil.getNondetChoice(choices);
+        PrimitiveVS<Integer> index = NondetUtil.getNondetChoice(choices);
         return filtered.restrict(index.getUniverse()).get(index);
     }
         
@@ -62,14 +62,14 @@ public class ReceiveEventQueue extends EventBag {
         assert (elements.getUniverse().isTrue());
         ListVS<Message> filtered = elements.restrict(pc);
         PrimitiveVS<Integer> size = filtered.size();
-        List<PrimitiveVS> choices = new ArrayList<>();
+        List<PrimitiveVS<Integer>> choices = new ArrayList<>();
         Map<Machine, Guard> targetMap = new HashMap<>();
         PrimitiveVS<Integer> idx = new PrimitiveVS<>(0).restrict(pc);
         while(BooleanVS.isEverTrue(IntegerVS.lessThan(idx, size))) {
             Guard cond = IntegerVS.lessThan(idx, size).getGuardFor(true);
             Message item = filtered.restrict(cond).get(idx);
             Guard add = Guard.constFalse();
-            for (GuardedValue<Machine> machine : ((Message) item).getTarget().getGuardedValues()) {
+            for (GuardedValue<Machine> machine : item.getTarget().getGuardedValues()) {
                 if (!targetMap.containsKey(machine.getValue())) {
                     targetMap.put(machine.getValue(), Guard.constFalse());
                 }
@@ -79,7 +79,7 @@ public class ReceiveEventQueue extends EventBag {
             choices.add(idx.restrict(cond.and(add)));
             idx = IntegerVS.add(idx, 1);
         }
-        PrimitiveVS<Integer> index = (PrimitiveVS<Integer>) NondetUtil.getNondetChoice(choices);
+        PrimitiveVS<Integer> index = NondetUtil.getNondetChoice(choices);
         Message element = filtered.restrict(index.getUniverse()).get(index);
         elements = elements.removeAt(index);
         return element;
