@@ -22,17 +22,17 @@ public class DPORScheduler extends IterativeBoundedScheduler {
     List<PrimitiveVS<Machine>> toExplore = new ArrayList<>();
 
     @Override
-    public List<PrimitiveVS> getNextSenderChoices() {
-        List<PrimitiveVS> senderChoices = super.getNextSenderChoices(); 
+    public List<PrimitiveVS<Machine>> getNextSenderChoices() {
+        List<PrimitiveVS<Machine>> senderChoices = super.getNextSenderChoices();
         if (toExplore.isEmpty()) {
             toExplore = ((DPORSchedule.DPORChoice) getSchedule().getChoice(getDepth())).getToExplore();
         }
         if (!toExplore.isEmpty()) {
           Guard canExplore = Guard.constFalse();
-          List<PrimitiveVS> newSenderChoices = new ArrayList<>();
-          for (PrimitiveVS choice : senderChoices) {
+          List<PrimitiveVS<Machine>> newSenderChoices = new ArrayList<>();
+          for (PrimitiveVS<Machine> choice : senderChoices) {
              for (GuardedValue<Machine> sender : toExplore.get(0).getGuardedValues()) {
-                 canExplore = canExplore.or(choice.symbolicEquals(new PrimitiveVS<>(sender.getValue()), choice.getUniverse()).getGuardFor(true)); 
+                 canExplore = canExplore.or(choice.symbolicEquals(new PrimitiveVS<>(sender.getValue()), choice.getUniverse()).getGuardFor(true));
              }
              newSenderChoices.add(choice.restrict(canExplore));
           }

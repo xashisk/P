@@ -1,8 +1,5 @@
 package psymbolic.valuesummary;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public interface ValueSummary<T extends ValueSummary<T>> {
 
     static UnionVS castToAny(Guard pc, ValueSummary<?> toCast) {

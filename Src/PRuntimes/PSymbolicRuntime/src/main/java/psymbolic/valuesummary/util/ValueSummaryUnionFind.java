@@ -5,14 +5,14 @@ import psymbolic.valuesummary.PrimitiveVS;
 
 import java.util.*;
 
-public class ValueSummaryUnionFind extends UnionFind<PrimitiveVS> {
+public class ValueSummaryUnionFind<T> extends UnionFind<PrimitiveVS<T>> {
 
-    Map<PrimitiveVS, Guard> universe = new HashMap<>();
+    Map<PrimitiveVS<T>, Guard> universe = new HashMap<>();
 
-    public ValueSummaryUnionFind(Collection<PrimitiveVS> c) {
+    public ValueSummaryUnionFind(Collection<PrimitiveVS<T>> c) {
         super();
-        for (PrimitiveVS elt : c) {
-            List<PrimitiveVS> values = new ArrayList<>(new HashSet<>(parents.values()));
+        for (PrimitiveVS<T> elt : c) {
+            List<PrimitiveVS<T>> values = new ArrayList<>(new HashSet<>(parents.values()));
             addElement(elt);
             Guard eltUniverse = elt.getUniverse();
             for (int i = 0; i < values.size(); i ++) {
@@ -27,20 +27,20 @@ public class ValueSummaryUnionFind extends UnionFind<PrimitiveVS> {
         }
     }
 
-    public Map<Set<PrimitiveVS>, Guard> getLastUniverseMap() {
-        Map<Set<PrimitiveVS>, Guard> lastUniverseMap = new HashMap<>();
-        for (Set<PrimitiveVS> set : lastDisjointSet) {
+    public Map<Set<PrimitiveVS<T>>, Guard> getLastUniverseMap() {
+        Map<Set<PrimitiveVS<T>>, Guard> lastUniverseMap = new HashMap<>();
+        for (Set<PrimitiveVS<T>> set : lastDisjointSet) {
             lastUniverseMap.put(set, universe.get(find(set.iterator().next())));
         }
         return lastUniverseMap;
     }
 
-    public void addElement(PrimitiveVS elt) {
+    public void addElement(PrimitiveVS<T> elt) {
         super.addElement(elt);
         universe.put(elt, elt.getUniverse());
     }
 
-    public boolean union(PrimitiveVS e1, PrimitiveVS e2) {
+    public boolean union(PrimitiveVS<T> e1, PrimitiveVS<T> e2) {
         Guard universe1 = universe.get(find(e1));
         Guard universe2 = universe.get(find(e2));
         boolean res = super.union(e1, e2);

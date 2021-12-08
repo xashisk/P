@@ -1,31 +1,48 @@
 package psymbolic.valuesummary.ai;
 
+import lombok.Getter;
 import psymbolic.runtime.Event;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 
-public class DomainManager {
+public class DomainManager<T> {
 
-    public static NumberDomain numberDomain = NumberDomain.DISJUNCTIVE;
-    public static DomainType genericDomain = DomainType.DISJUNCTIVE;
+    @Getter
+    private static final Map<Class<?>, DomainManager<?>> managerMap = new HashMap<>();
+
+    final Function<T, Domain<T>> constructor;
+    final Function<Set<T>, Domain<T>> setConstructor;
+
+    private DomainManager(Function<T, Domain<T>> constructor, Function<Set<T>, Domain<T>> setConstructor) {
+        this.constructor = constructor;
+        this.setConstructor = setConstructor;
+    }
+
+    public Domain<T> concreteConstructor(T concrete) {
+        return constructor.apply(concrete);
+    }
+
+    public Domain<T> setConstructor(Set<T> concrete) {
+        return setConstructor.apply(concrete);
+    }
 
     public static <T> Domain<T> fromConcrete(T concrete) {
         return new Disjunctive<>(concrete);
     }
 
-    public static <T> Domain<T> fromConcrete(Set<T> concrete) {
-        return new Disjunctive<>(concrete);
+    public static <T> Domain<T> fromConcrete(Set<T> concreteVals) {
+        return new Disjunctive<>(concreteVals);
     }
 
-    public static <T> T toConcrete(Domain<T> d) {
-        T result = d.concretize();
-        if (result == null) throw new RuntimeException("Cannot concretize " + d);
+    public static <T> Set<T> toConcrete(Domain<T> d) {
+        Set<T> result = d.concretize();
+        if (result == null) throw new RuntimeException("Cannot concretize infinite domain");
         return result;
     }
+
 
     public static <T> boolean canJoin(Domain<T> d1, Domain<T> d2) {
         return d1.canJoin(d2);

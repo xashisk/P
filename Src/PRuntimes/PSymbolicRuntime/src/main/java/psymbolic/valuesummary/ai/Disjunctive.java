@@ -19,7 +19,6 @@ public class Disjunctive<T> implements Domain<T> {
         this.values = Collections.singleton(value);
     }
 
-
     @Override
     public boolean canJoin(Domain<T> d) {
         if (!(d instanceof Disjunctive<?>)) {
@@ -84,9 +83,8 @@ public class Disjunctive<T> implements Domain<T> {
     }
 
     @Override
-    public T concretize() {
-        if (values.size() == 1) { return values.iterator().next(); }
-        return null;
+    public Set<T> concretize() {
+        return values;
     }
 
 }

@@ -45,5 +45,5 @@ public class Concrete<T> implements Domain<T> {
     }
 
     @Override
-    public T concretize() { return value; }
+    public Set<T> concretize() { return Collections.singleton(value); }
 }

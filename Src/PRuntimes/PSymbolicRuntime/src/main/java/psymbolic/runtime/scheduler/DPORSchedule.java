@@ -1,14 +1,11 @@
 package psymbolic.runtime.scheduler;
 
 import psymbolic.valuesummary.*;
-import psymbolic.runtime.VectorClockManager;
 import psymbolic.runtime.machine.Machine;
 import psymbolic.runtime.Message;
-import psymbolic.runtime.Event;
 
 import lombok.Getter;
 import lombok.Setter;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -252,7 +249,7 @@ public class DPORSchedule extends Schedule {
     }
 
     @Override
-    public void addRepeatElement(PrimitiveVS<ValueSummary> choice, int depth) {
+    public void addRepeatElement(PrimitiveVS<?> choice, int depth) {
         super.addRepeatElement(choice, depth);
         propagateSleepSet(depth);
     }

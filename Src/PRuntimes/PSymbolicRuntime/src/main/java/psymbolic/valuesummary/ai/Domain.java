@@ -12,6 +12,6 @@ public interface Domain<T> {
     <U, R> Domain<R> apply(BiFunction<T, U, R> f, Domain<U> other);
     boolean contains(T val);
     Domain<Boolean> domainEquals(Domain<T> other);
-    T concretize();
+    Set<T> concretize();
 
 }

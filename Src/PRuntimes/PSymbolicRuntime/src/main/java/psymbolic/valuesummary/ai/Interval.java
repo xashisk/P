@@ -79,9 +79,22 @@ public class Interval<T extends Number & Comparable<T>> implements Domain<T> {
     }
 
     @Override
-    public T concretize() {
-        if (this.low.equals(this.high)) return this.low;
-        return null;
+    public Set<T> concretize() {
+        Set<T> concrete = new HashSet<>();
+        if (low instanceof Integer) {
+            for (Integer i = ((Integer) low); i < (Integer) high ; i++) {
+                concrete.add((T) i);
+            }
+        }
+        else if (low instanceof Long) {
+            for (Long i = ((Long) low); i < (Long) high ; i++) {
+                concrete.add((T) i);
+            }
+        }
+        else {
+            throw new RuntimeException("Cannot concretize infinite domain");
+        }
+        return concrete;
     }
 
 }
