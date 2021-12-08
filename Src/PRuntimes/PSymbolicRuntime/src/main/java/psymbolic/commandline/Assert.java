@@ -19,8 +19,8 @@ public class Assert {
             throw new BugFoundException("Property violated: " + msg, pc);
         }
     }
-    public static void progProp(boolean p, PrimitiveVS<String> msg, Scheduler scheduler, Guard pc) {
-        if (!p) {
+    public static void progProp(PrimitiveVS<String> msg, Scheduler scheduler, Guard pc) {
+        if (!pc.isFalse()) {
             List<String> msgs = msg.restrict(pc).getGuardedValues().stream().map(GuardedValue::getValue).collect(Collectors.toList());
             throw new BugFoundException("Properties violated: " + msgs, pc);
         }
