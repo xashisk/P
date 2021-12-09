@@ -87,4 +87,9 @@ public class Disjunctive<T> implements Domain<T> {
         return values;
     }
 
+    @Override
+    public String toString() {
+        return "Disjunctive of " + getValues().toString();
+    }
+
 }

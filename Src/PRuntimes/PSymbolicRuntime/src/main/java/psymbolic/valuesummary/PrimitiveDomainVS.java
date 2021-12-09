@@ -87,9 +87,6 @@ public class PrimitiveDomainVS<T> implements ValueSummary<PrimitiveDomainVS<T>> 
      */
     public PrimitiveDomainVS(PrimitiveDomainVS<T> old) {
         this(old.guardedValues);
-        this.guardedValuesList = new ArrayList<>(old.guardedValuesList);
-        this.universe =  old.universe;
-        this.values = new HashSet<>(old.values);
     }
 
     /** Make an empty PrimVS */
@@ -122,7 +119,7 @@ public class PrimitiveDomainVS<T> implements ValueSummary<PrimitiveDomainVS<T>> 
         Guard res = Guard.constFalse();
         for (Map.Entry<Domain<T>, Guard> entry : guardedValues.entrySet()) {
             if (entry.getKey().contains(value)) {
-                res = res.and(entry.getValue());
+                res = res.or(entry.getValue());
             }
         }
         return res;
@@ -229,6 +226,7 @@ public class PrimitiveDomainVS<T> implements ValueSummary<PrimitiveDomainVS<T>> 
                 for (Map.Entry<Domain<T>, Guard> entry2 : result.entrySet()) {
                     // assumes that canJoin is transitive, so that there is at most one entry that could be joined with
                     if (DomainManager.canJoin(entry.getKey(), entry2.getKey())) {
+                        if (entry.getValue().isFalse() || entry2.getValue().isFalse()) { throw new RuntimeException("combining with false guard"); }
                         toJoinWith = entry2;
                     }
                 }
@@ -236,7 +234,7 @@ public class PrimitiveDomainVS<T> implements ValueSummary<PrimitiveDomainVS<T>> 
                     result.remove(toJoinWith.getKey());
                     result.put((Domain<T>) DomainManager.join(entry.getKey(), toJoinWith.getKey()), entry.getValue().or(toJoinWith.getValue()));
                 }
-                result.merge(entry.getKey(), entry.getValue(), Guard::or);
+                else result.merge(entry.getKey(), entry.getValue(), Guard::or);
             }
         }
 
@@ -276,7 +274,7 @@ public class PrimitiveDomainVS<T> implements ValueSummary<PrimitiveDomainVS<T>> 
         for (GuardedValue<U> guardedValue : primVS.getGuardedValues()) {
             guardedValues.put(DomainManager.fromConcrete(guardedValue.getValue()), guardedValue.getGuard());
         }
-       return new PrimitiveDomainVS<>(guardedValues);
+        return new PrimitiveDomainVS<>(guardedValues);
     }
 
     public PrimitiveVS<T> toPrimitiveVS() {

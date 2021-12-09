@@ -80,9 +80,6 @@ public class PrimitiveVS<T> implements ValueSummary<PrimitiveVS<T>> {
      */
     public PrimitiveVS(PrimitiveVS<T> old) {
         this(old.guardedValues);
-        this.guardedValuesList = new ArrayList<>(old.guardedValuesList);
-        this.universe =  old.universe;
-        this.values = new HashSet<>(old.values);
     }
 
     /** Make an empty PrimVS */

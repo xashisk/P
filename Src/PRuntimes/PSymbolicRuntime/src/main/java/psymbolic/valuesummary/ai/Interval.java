@@ -97,4 +97,9 @@ public class Interval<T extends Number & Comparable<T>> implements Domain<T> {
         return concrete;
     }
 
+    @Override
+    public String toString() {
+        return "Interval of [" + low + ", " + high + "]";
+    }
+
 }
